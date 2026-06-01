@@ -21,8 +21,8 @@ const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
 
 const decisionSupabase = createClient(
-  process.env.DECISION_SUPABASE_URL,
-  process.env.DECISION_SUPABASE_KEY
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
 );
 
 const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 20 * 60 * 1000);
@@ -77,6 +77,40 @@ async function markDecisionProcessed(id) {
       .eq('id', id);
   } catch (err) {
     console.error('MARK DECISION ERROR:', err.message);
+  }
+}
+
+async function processDecisionMessages() {
+  const messages = await loadDecisionMessages();
+
+  if (!messages.length) return;
+
+  for (const row of messages) {
+    const text = cleanText(row.message);
+
+    let parsed = null;
+
+    if (isGexMessage(text)) {
+      parsed = parseGex(text);
+    } else if (isRadarMessage(text)) {
+      parsed = parseRadar(text);
+    }
+
+    if (parsed && parsed.symbol) {
+      if (parsed.source === 'GEX') {
+        pushGlobalHistory(recentGexMessages, parsed, HISTORY_LIMIT);
+        console.log(`GEX SAVED FROM SUPABASE: ${parsed.symbol} ${parsed.side}`);
+      }
+
+      if (parsed.source === 'RADAR') {
+        pushGlobalHistory(recentRadarMessages, parsed, HISTORY_LIMIT);
+        console.log(`RADAR SAVED FROM SUPABASE: ${parsed.symbol} ${parsed.side}`);
+      }
+
+      await scanGlobalMatches();
+    }
+
+    await markDecisionProcessed(row.id);
   }
 }
 
@@ -1378,3 +1412,6 @@ bot.on('polling_error', (err) => {
 
 setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
+
+setInterval(processDecisionMessages, 15 * 1000);
+processDecisionMessages();
