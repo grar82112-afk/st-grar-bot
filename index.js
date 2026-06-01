@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, {
   polling: {
@@ -18,6 +19,11 @@ const SIGNALS_CHAT_ID = process.env.SIGNALS_CHAT_ID || DECISION_GROUP_ID;
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
+
+const decisionSupabase = createClient(
+  process.env.DECISION_SUPABASE_URL,
+  process.env.DECISION_SUPABASE_KEY
+);
 
 const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 20 * 60 * 1000);
 const PRICE_CHECK_MS = Number(process.env.PRICE_CHECK_MS || 30 * 1000);
@@ -41,6 +47,38 @@ const recentRadarMessages = [];
 const activeSetups = new Map();
 const activeTrades = new Map();
 const sentSetupKeys = new Set();
+
+async function loadDecisionMessages() {
+  try {
+    const { data, error } = await decisionSupabase
+      .from('decision_messages')
+      .select('*')
+      .eq('processed', false)
+      .order('created_at', { ascending: true })
+      .limit(50);
+
+    if (error) {
+      console.error('LOAD DECISION MESSAGES ERROR:', error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('LOAD DECISION MESSAGES ERROR:', err.message);
+    return [];
+  }
+}
+
+async function markDecisionProcessed(id) {
+  try {
+    await decisionSupabase
+      .from('decision_messages')
+      .update({ processed: true })
+      .eq('id', id);
+  } catch (err) {
+    console.error('MARK DECISION ERROR:', err.message);
+  }
+}
 
 console.log('🚀 ST Decision Bot Started');
 
