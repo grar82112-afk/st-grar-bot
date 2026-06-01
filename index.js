@@ -1413,3 +1413,8 @@ bot.on('polling_error', (err) => {
 setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
 setInterval(processDecisionMessages, 15 * 1000);
+
+bot.sendMessage(
+  SIGNALS_CHAT_ID,
+  '✅ اختبار قناة بوت القرار'
+).catch(console.error);
