@@ -1412,6 +1412,4 @@ bot.on('polling_error', (err) => {
 
 setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
-
 setInterval(processDecisionMessages, 15 * 1000);
-processDecisionMessages();
