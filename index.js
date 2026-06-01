@@ -19,29 +19,30 @@ const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
 
-const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 10 * 60 * 1000);
+const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 20 * 60 * 1000);
 const PRICE_CHECK_MS = Number(process.env.PRICE_CHECK_MS || 30 * 1000);
 const SETUP_EXPIRE_MS = Number(process.env.SETUP_EXPIRE_MS || 45 * 60 * 1000);
 
-const MIN_SCORE = Number(process.env.MIN_SCORE || 7);
+const MIN_SCORE = Number(process.env.MIN_SCORE || 6);
 
-const MIN_CONTRACT_PRICE = Number(process.env.MIN_CONTRACT_PRICE || 1.50);
-const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 2.50);
+const MIN_CONTRACT_PRICE = Number(process.env.MIN_CONTRACT_PRICE || 0.80);
+const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 4.00);
 
 const CONTRACT_UPDATE_STEP = Number(process.env.CONTRACT_UPDATE_STEP || 0.10);
 const CONTRACT_STOP_DROP = Number(process.env.CONTRACT_STOP_DROP || 0.30);
 
-const stateBySymbol = new Map();
+const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 5);
+
+const recentGexMessages = [];
+const recentRadarMessages = [];
+
 const activeSetups = new Map();
 const activeTrades = new Map();
 const sentSetupKeys = new Set();
 
 console.log('🚀 ST Decision Bot Started');
 
-bot.sendMessage(
-  ADMIN_CHAT_ID,
-  '✅ ST Decision Bot Started'
-).catch(() => {});
+bot.sendMessage(ADMIN_CHAT_ID, '✅ ST Decision Bot Started').catch(() => {});
 
 // =====================
 // Helpers
@@ -63,6 +64,24 @@ function fmtNum(n) {
 
 function cleanText(text) {
   return String(text || '').trim();
+}
+
+function pushGlobalHistory(arr, item, limit = HISTORY_LIMIT) {
+  const existingIndex = arr.findIndex(x => x.symbol === item.symbol);
+
+  if (existingIndex !== -1) {
+    arr.splice(existingIndex, 1);
+  }
+
+  arr.unshift(item);
+
+  if (arr.length > limit) {
+    arr.length = limit;
+  }
+}
+
+function isFresh(item) {
+  return item && now() - item.time <= MATCH_WINDOW_MS;
 }
 
 function getSymbolFromText(text) {
@@ -115,7 +134,6 @@ function extractScore(text) {
 
   return m ? Number(m[1]) : 0;
 }
-
 function extractBiasFromGex(text) {
   if (text.includes('CALL BIAS')) return 'CALL';
   if (text.includes('PUT BIAS')) return 'PUT';
@@ -211,12 +229,13 @@ function isReadyText(text) {
     text.includes('NOW')
   );
 }
-function extractTargets(text) {
-  const tp1 = extractNumberAfter('TP1', text);
-  const tp2 = extractNumberAfter('TP2', text);
-  const tp3 = extractNumberAfter('TP3', text);
 
-  return { tp1, tp2, tp3 };
+function extractTargets(text) {
+  return {
+    tp1: extractNumberAfter('TP1', text),
+    tp2: extractNumberAfter('TP2', text),
+    tp3: extractNumberAfter('TP3', text)
+  };
 }
 
 function extractStop(text) {
@@ -226,6 +245,15 @@ function extractStop(text) {
     text.match(/SL:\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
 
   return m ? Number(m[1]) : null;
+}
+
+function buildAutoStop(entry, side) {
+  if (!entry || !['CALL', 'PUT'].includes(side)) return null;
+
+  if (side === 'CALL') return entry * 0.995;
+  if (side === 'PUT') return entry * 1.005;
+
+  return null;
 }
 
 function extractSuggestedExpiration(text) {
@@ -242,7 +270,6 @@ function extractDominantExpiration(text) {
   if (!matches.length) return null;
   return matches[0][1];
 }
-
 function getStrikeStep(price) {
   if (price >= 1000) return 10;
   if (price >= 500) return 5;
@@ -405,19 +432,13 @@ function scoreOptionContract(c, preferredStrike, side) {
 
   if (!isNaN(delta)) {
     if (side === 'CALL') {
-      if (delta >= 0.30 && delta <= 0.55) {
-        deltaScore = 3;
-      } else if (delta >= 0.20 && delta <= 0.65) {
-        deltaScore = 1.5;
-      }
+      if (delta >= 0.25 && delta <= 0.65) deltaScore = 3;
+      else if (delta >= 0.15 && delta <= 0.75) deltaScore = 1.5;
     }
 
     if (side === 'PUT') {
-      if (delta <= -0.30 && delta >= -0.55) {
-        deltaScore = 3;
-      } else if (delta <= -0.20 && delta >= -0.65) {
-        deltaScore = 1.5;
-      }
+      if (delta <= -0.25 && delta >= -0.65) deltaScore = 3;
+      else if (delta <= -0.15 && delta >= -0.75) deltaScore = 1.5;
     }
   }
 
@@ -425,10 +446,10 @@ function scoreOptionContract(c, preferredStrike, side) {
   let spreadPenalty = 0;
 
   if (c.bid > 0 && c.ask > 0) {
-    spreadPenalty = Math.min(spread / 0.10, 2);
+    spreadPenalty = Math.min(spread / 0.20, 2);
   }
 
-  const distancePenalty = distance * 0.15;
+  const distancePenalty = distance * 0.10;
 
   return volumeScore + oiScore + deltaScore - distancePenalty - spreadPenalty;
 }
@@ -488,7 +509,15 @@ function parseGex(text) {
   const entry = explicitEntry || (readyText ? messagePrice : null);
 
   const targets = extractTargets(text);
-  const stop = extractStop(text);
+
+  let stop = extractStop(text);
+  let autoStop = false;
+
+  if (!stop && entry) {
+    stop = buildAutoStop(entry, side);
+    autoStop = !!stop;
+  }
+
   const strike = getStrikeFromEntry(entry, side);
 
   return {
@@ -501,6 +530,7 @@ function parseGex(text) {
     messagePrice,
     readyText,
     stop,
+    autoStop,
     strike,
     tp1: targets.tp1,
     tp2: targets.tp2,
@@ -543,26 +573,32 @@ function parseRadar(text) {
 }
 
 // =====================
-// Decision Logic
+// Global Match Logic
 // =====================
-
-function getOrCreateSymbolState(symbol) {
-  if (!stateBySymbol.has(symbol)) {
-    stateBySymbol.set(symbol, {
-      gex: null,
-      radar: null
-    });
-  }
-
-  return stateBySymbol.get(symbol);
-}
-
-function isFresh(item) {
-  return item && now() - item.time <= MATCH_WINDOW_MS;
-}
 
 function buildSetupKey(symbol, side, entry, expiration, optionTicker) {
   return `${symbol}:${side}:${entry}:${expiration || 'NA'}:${optionTicker || 'NA'}`;
+}
+
+function findMatchingPairs() {
+  const pairs = [];
+
+  const freshGex = recentGexMessages.filter(isFresh);
+  const freshRadar = recentRadarMessages.filter(isFresh);
+
+  for (const gex of freshGex) {
+    const radar = freshRadar.find(r =>
+      r.symbol === gex.symbol &&
+      r.side === gex.side &&
+      ['CALL', 'PUT'].includes(r.side)
+    );
+
+    if (radar) {
+      pairs.push({ symbol: gex.symbol, gex, radar });
+    }
+  }
+
+  return pairs;
 }
 
 function canCreateDecision(gex, radar) {
@@ -587,6 +623,13 @@ function canCreateDecision(gex, radar) {
     };
   }
 
+  if (gex.symbol !== radar.symbol) {
+    return {
+      ok: false,
+      reason: `الشركة مختلفة: GEX=${gex.symbol}, RADAR=${radar.symbol}`
+    };
+  }
+
   if (gex.side !== radar.side) {
     return {
       ok: false,
@@ -608,11 +651,20 @@ function canCreateDecision(gex, radar) {
     };
   }
 
+  if (!gex.stop && gex.entry) {
+    gex.stop = buildAutoStop(gex.entry, gex.side);
+    gex.autoStop = true;
+  }
+
   if (!gex.stop) {
     return {
       ok: false,
-      reason: 'لا يوجد وقف فني واضح'
+      reason: 'لا يوجد وقف ولا يمكن حساب وقف تلقائي'
     };
+  }
+
+  if (!gex.strike && gex.entry) {
+    gex.strike = getStrikeFromEntry(gex.entry, gex.side);
   }
 
   if (!gex.strike && !gex.entry && !gex.readyText) {
@@ -628,11 +680,32 @@ function canCreateDecision(gex, radar) {
   };
 }
 
+async function scanGlobalMatches() {
+  const pairs = findMatchingPairs();
+
+  if (!pairs.length) {
+    console.log('NO GLOBAL MATCHES YET');
+    return;
+  }
+
+  for (const pair of pairs) {
+    await createWatchSetup(pair.symbol, pair.gex, pair.radar);
+  }
+}
+
 async function createWatchSetup(symbol, gex, radar) {
   const decision = canCreateDecision(gex, radar);
 
   if (!decision.ok) {
     console.log(`NO DECISION ${symbol}:`, decision.reason);
+
+    if (ADMIN_CHAT_ID) {
+      bot.sendMessage(
+        ADMIN_CHAT_ID,
+        `⚠️ رفض قرار — ${symbol}\nالسبب: ${decision.reason}`
+      ).catch(() => {});
+    }
+
     return;
   }
 
@@ -640,10 +713,17 @@ async function createWatchSetup(symbol, gex, radar) {
 
   if (expiration === 'غير متوفر') {
     console.log(`NO DECISION ${symbol}: لا يوجد انتهاء مقترح`);
+
+    if (ADMIN_CHAT_ID) {
+      bot.sendMessage(
+        ADMIN_CHAT_ID,
+        `⚠️ رفض قرار — ${symbol}\nالسبب: لا يوجد انتهاء مقترح من الرادار`
+      ).catch(() => {});
+    }
+
     return;
   }
-
-  let currentPrice = null;
+    let currentPrice = null;
 
   try {
     currentPrice = await getFinnhubPrice(symbol);
@@ -658,6 +738,11 @@ async function createWatchSetup(symbol, gex, radar) {
 
   if (!gex.strike && gex.entry) {
     gex.strike = getStrikeFromEntry(gex.entry, gex.side);
+  }
+
+  if (!gex.stop && gex.entry) {
+    gex.stop = buildAutoStop(gex.entry, gex.side);
+    gex.autoStop = true;
   }
 
   if (!gex.entry || !gex.strike) {
@@ -685,6 +770,16 @@ async function createWatchSetup(symbol, gex, radar) {
     optionData.mid > MAX_CONTRACT_PRICE
   ) {
     console.log(`NO CONTRACT IN PRICE RANGE ${symbol}:`, optionData?.mid || 'NA');
+
+    if (ADMIN_CHAT_ID) {
+      bot.sendMessage(
+        ADMIN_CHAT_ID,
+        `⚠️ رفض عقد — ${symbol}
+السبب: لا يوجد عقد داخل النطاق ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}
+السعر المتوفر: ${fmtPrice(optionData?.mid)}`
+      ).catch(() => {});
+    }
+
     return;
   }
 
@@ -709,6 +804,7 @@ async function createWatchSetup(symbol, gex, radar) {
     side: gex.side,
     entry: gex.entry,
     stop: gex.stop,
+    autoStop: gex.autoStop || false,
     readyText: gex.readyText,
 
     preferredStrike: gex.strike,
@@ -774,6 +870,10 @@ async function sendWatchMessage(setup, gex, radar) {
       ? `اختراق ${setup.entry} والثبات فوقه`
       : `كسر ${setup.entry} والثبات تحته`;
 
+  const stopNote = setup.autoStop
+    ? 'وقف تلقائي محسوب لأن رسالة القاما لا تحتوي وقف واضح'
+    : 'وقف من رسالة القاما';
+
   const text = `🚨 صفقة مراقبة — ST Decision
 
 📊 السهم: ${setup.symbol}
@@ -799,6 +899,7 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 
 🛑 وقف السهم:
 ${fmtPrice(setup.stop)}
+📌 نوع الوقف: ${stopNote}
 
 ━━━━━━━━━━━━━━
 📊 بيانات العقد
@@ -826,6 +927,7 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
   await bot.sendMessage(SIGNALS_CHAT_ID, text);
 }
+
 async function sendActivatedMessage(setup, price) {
   const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
   const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
@@ -842,8 +944,7 @@ async function sendActivatedMessage(setup, price) {
   }
 
   const optionEntry = optionData?.mid || setup.optionEntry || null;
-
-  if (
+    if (
     !optionEntry ||
     optionEntry < MIN_CONTRACT_PRICE ||
     optionEntry > MAX_CONTRACT_PRICE
@@ -891,6 +992,8 @@ ${setup.optionTicker || 'غير متوفر'}
 
   activeTrades.set(setup.key, setup);
 
+  const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
+
   const text = `✅ تم تفعيل الصفقة — ST Decision
 
 📊 السهم: ${setup.symbol}
@@ -906,6 +1009,7 @@ ${setup.optionTicker || 'غير متوفر'}
 💵 دخول العقد: ${fmtPrice(optionEntry)}
 🛑 وقف العقد: ${fmtPrice(optionStop)}
 🛑 وقف السهم: ${fmtPrice(setup.stop)}
+📌 نوع الوقف: ${stopNote}
 
 🎯 أهداف السهم:
 TP1: ${setup.tp1 || 'غير متوفر'}
@@ -1101,32 +1205,42 @@ bot.on('message', async (msg) => {
     }
 
     if (text === '/status') {
+      const gexList = recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
+      const radarList = recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
+
       return bot.sendMessage(
         msg.chat.id,
         `📊 حالة ST Decision Bot
 
 ✅ يعمل
 
+آخر شركات القاما:
+${gexList}
+
+آخر شركات الرادار:
+${radarList}
+
 صفقات المراقبة: ${activeSetups.size}
 الصفقات المفعلة: ${activeTrades.size}
+
+عدد الشركات المحفوظة من كل مصدر:
+${HISTORY_LIMIT}
+
+نافذة المطابقة:
+${Math.round(MATCH_WINDOW_MS / 60000)} دقيقة
+
+أقل Score:
+${MIN_SCORE} / 10
 
 نطاق سعر العقد:
 ${MIN_CONTRACT_PRICE} إلى ${MAX_CONTRACT_PRICE}
 
-طريقة اختيار العقد:
-Massive Option Chain مرة واحدة ثم فلترة محلية
+طريقة القرار:
+يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
+ثم يبحث عن نفس الشركة ونفس الاتجاه
 
-طريقة الدخول:
-اختراق / كسر / دخول الآن / جاهزة
-
-طريقة متابعة العقد:
-Snapshot مباشر لنفس العقد بعد التفعيل
-
-تحديث العقد كل:
-+${CONTRACT_UPDATE_STEP.toFixed(2)}
-
-وقف العقد:
--${CONTRACT_STOP_DROP.toFixed(2)} من سعر الدخول`
+طريقة الوقف:
+وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 0.5%`
       );
     }
 
@@ -1142,22 +1256,17 @@ Snapshot مباشر لنفس العقد بعد التفعيل
       return;
     }
 
-    const symbol = parsed.symbol;
-    const s = getOrCreateSymbolState(symbol);
-
     if (parsed.source === 'GEX') {
-      s.gex = parsed;
-      console.log(`GEX SAVED: ${symbol}`);
+      pushGlobalHistory(recentGexMessages, parsed, HISTORY_LIMIT);
+      console.log(`GEX SAVED GLOBAL: ${parsed.symbol} ${parsed.side} | Count: ${recentGexMessages.length}`);
     }
 
     if (parsed.source === 'RADAR') {
-      s.radar = parsed;
-      console.log(`RADAR SAVED: ${symbol}`);
+      pushGlobalHistory(recentRadarMessages, parsed, HISTORY_LIMIT);
+      console.log(`RADAR SAVED GLOBAL: ${parsed.symbol} ${parsed.side} | Count: ${recentRadarMessages.length}`);
     }
 
-    if (isFresh(s.gex) && isFresh(s.radar)) {
-      await createWatchSetup(symbol, s.gex, s.radar);
-    }
+    await scanGlobalMatches();
   } catch (err) {
     console.error('MESSAGE ERROR:', err.message);
   }
