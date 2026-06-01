@@ -1313,6 +1313,7 @@ console.log('MESSAGE RECEIVED:', {
   chatId: msg.chat?.id,
   title: msg.chat?.title,
   type: msg.chat?.type,
+  messageThreadId: msg.message_thread_id,
   fromBot: msg.from?.is_bot,
   from: msg.from?.username || msg.from?.first_name,
   text: String(msg.text || '').slice(0, 80)
