@@ -15,6 +15,9 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, {
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 const DECISION_GROUP_ID = process.env.DECISION_GROUP_ID;
 const SIGNALS_CHAT_ID = process.env.SIGNALS_CHAT_ID || DECISION_GROUP_ID;
+const SIGNALS_THREAD_ID = process.env.SIGNALS_THREAD_ID
+  ? Number(process.env.SIGNALS_THREAD_ID)
+  : null;
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
@@ -47,6 +50,16 @@ const recentRadarMessages = [];
 const activeSetups = new Map();
 const activeTrades = new Map();
 const sentSetupKeys = new Set();
+
+async function sendSignalMessage(text) {
+  const options = {};
+
+  if (SIGNALS_THREAD_ID) {
+    options.message_thread_id = SIGNALS_THREAD_ID;
+  }
+
+  return bot.sendMessage(SIGNALS_CHAT_ID, text, options);
+}
 
 async function loadDecisionMessages() {
   try {
@@ -117,7 +130,6 @@ async function processDecisionMessages() {
 console.log('🚀 ST Decision Bot Started');
 
 bot.sendMessage(ADMIN_CHAT_ID, '✅ ST Decision Bot Started').catch(() => {});
-
 // =====================
 // Helpers
 // =====================
@@ -216,7 +228,6 @@ function extractBiasFromGex(text) {
 }
 
 function extractRadarSide(text) {
-  // 1) أولوية الخلاصة النهائية للرادار
   if (
     text.includes('حسب المعطيات الحالية: انتظر') ||
     text.includes('انتظر') ||
@@ -243,9 +254,7 @@ function extractRadarSide(text) {
   ) {
     return 'PUT';
   }
-
-  // 2) مؤشرات ثانوية فقط إذا لا توجد خلاصة واضحة
-  if (
+    if (
     text.includes('سيطرة الكول') ||
     text.includes('الكول يسيطر') ||
     text.includes('المشترون يسيطرون') ||
@@ -297,6 +306,7 @@ function extractEntry(text, side) {
 
   return m ? Number(m[1]) : null;
 }
+
 function extractCurrentPriceFromText(text) {
   const patterns = [
     /سعر السهم الحالي:\s*([0-9]+(?:\.[0-9]+)?)/,
@@ -358,7 +368,6 @@ function buildAutoStop(entry, side) {
 
   return null;
 }
-
 function extractSuggestedExpiration(text) {
   const m =
     text.match(/الانتهاء المقترح:\s*\n?\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
@@ -683,7 +692,6 @@ function parseRadar(text) {
     time: now()
   };
 }
-
 // =====================
 // Global Match Logic
 // =====================
@@ -712,6 +720,7 @@ function findMatchingPairs() {
 
   return pairs;
 }
+
 function canCreateDecision(gex, radar) {
   if (!isFresh(gex) || !isFresh(radar)) {
     return {
@@ -872,8 +881,7 @@ async function createWatchSetup(symbol, gex, radar) {
     await notifyAdminReject(symbol, reason);
     return;
   }
-
-  let optionData = null;
+    let optionData = null;
 
   try {
     optionData = await findBestOptionContract(
@@ -969,6 +977,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
+
 // =====================
 // Messages
 // =====================
@@ -1039,7 +1048,7 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
 ⚠️ ليست توصية شراء أو بيع`;
 
-  await bot.sendMessage(SIGNALS_CHAT_ID, text);
+  await sendSignalMessage(text);
 }
 
 async function sendActivatedMessage(setup, price) {
@@ -1067,9 +1076,7 @@ async function sendActivatedMessage(setup, price) {
     activeSetups.delete(setup.key);
     activeTrades.delete(setup.key);
 
-    await bot.sendMessage(
-      SIGNALS_CHAT_ID,
-      `❌ تم إلغاء تفعيل الصفقة — ST Decision
+    await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
 
 📊 السهم: ${setup.symbol}
 النوع: ${sideArabic}
@@ -1084,8 +1091,7 @@ ${setup.optionTicker || 'غير متوفر'}
 📌 السبب:
 سعر العقد خرج عن النطاق المطلوب ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}
 
-⚠️ ليست توصية شراء أو بيع`
-    );
+⚠️ ليست توصية شراء أو بيع`);
 
     return;
   }
@@ -1140,9 +1146,8 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 
 ⚠️ ليست توصية شراء أو بيع`;
 
-  await bot.sendMessage(SIGNALS_CHAT_ID, text);
+  await sendSignalMessage(text);
 }
-
 async function sendCancelledMessage(setup, price, reason) {
   const text = `❌ تم إلغاء صفقة المراقبة — ST Decision
 
@@ -1157,8 +1162,9 @@ ${setup.optionTicker || 'غير متوفر'}
 📌 السبب:
 ${reason}`;
 
-  await bot.sendMessage(SIGNALS_CHAT_ID, text);
+  await sendSignalMessage(text);
 }
+
 // =====================
 // Monitors
 // =====================
@@ -1230,7 +1236,6 @@ async function monitorSetups() {
     }
   }
 }
-
 async function monitorActiveTrades() {
   for (const [key, trade] of activeTrades.entries()) {
     try {
@@ -1253,9 +1258,7 @@ async function monitorActiveTrades() {
       if (trade.optionStop && optionPrice <= trade.optionStop) {
         activeTrades.delete(key);
 
-        await bot.sendMessage(
-          SIGNALS_CHAT_ID,
-          `🛑 ضرب وقف العقد — ST Decision
+        await sendSignalMessage(`🛑 ضرب وقف العقد — ST Decision
 
 📊 السهم: ${trade.symbol}
 🎯 العقد:
@@ -1266,8 +1269,7 @@ ${trade.optionTicker}
 💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-📌 تم إيقاف المتابعة.`
-        );
+📌 تم إيقاف المتابعة.`);
 
         continue;
       }
@@ -1277,9 +1279,7 @@ ${trade.optionTicker}
       if (optionPrice >= lastUpdate + CONTRACT_UPDATE_STEP) {
         trade.lastContractUpdatePrice = optionPrice;
 
-        await bot.sendMessage(
-          SIGNALS_CHAT_ID,
-          `📈 تحديث العقد — ST Decision
+        await sendSignalMessage(`📈 تحديث العقد — ST Decision
 
 📊 السهم: ${trade.symbol}
 🎯 العقد:
@@ -1292,8 +1292,7 @@ ${trade.optionTicker}
 
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 📦 OI: ${fmtNum(trade.optionOi)}
-📊 Volume: ${fmtNum(trade.optionVolume)}`
-        );
+📊 Volume: ${fmtNum(trade.optionVolume)}`);
       }
     } catch (err) {
       console.error('ACTIVE TRADE MONITOR ERROR:', key, err.message);
@@ -1309,16 +1308,16 @@ bot.on('message', async (msg) => {
   try {
     const chatId = String(msg.chat?.id || '');
 
-console.log('MESSAGE RECEIVED:', {
-  chatId: msg.chat?.id,
-  title: msg.chat?.title,
-  type: msg.chat?.type,
-  messageThreadId: msg.message_thread_id,
-  fromBot: msg.from?.is_bot,
-  from: msg.from?.username || msg.from?.first_name,
-  text: String(msg.text || '').slice(0, 80)
-});
-    
+    console.log('MESSAGE RECEIVED:', {
+      chatId: msg.chat?.id,
+      title: msg.chat?.title,
+      type: msg.chat?.type,
+      messageThreadId: msg.message_thread_id,
+      fromBot: msg.from?.is_bot,
+      from: msg.from?.username || msg.from?.first_name,
+      text: String(msg.text || '').slice(0, 80)
+    });
+
     if (chatId !== String(DECISION_GROUP_ID)) {
       return;
     }
@@ -1329,7 +1328,8 @@ console.log('MESSAGE RECEIVED:', {
     if (text === '/ping') {
       return bot.sendMessage(
         msg.chat.id,
-        '✅ ST Decision Bot يعمل ويقرأ المجموعة'
+        '✅ ST Decision Bot يعمل ويقرأ المجموعة',
+        msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}
       );
     }
 
@@ -1375,7 +1375,8 @@ ${MAX_ENTRY_DISTANCE_PCT}%
 أولوية لخلاصة المتابعة. إذا الخلاصة تقول انتظر = لا صفقة.
 
 طريقة الوقف:
-وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 0.5%`
+وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 0.5%`,
+        msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}
       );
     }
 
@@ -1415,7 +1416,4 @@ setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
 setInterval(processDecisionMessages, 15 * 1000);
 
-bot.sendMessage(
-  SIGNALS_CHAT_ID,
-  '✅ اختبار قناة بوت القرار'
-).catch(console.error);
+sendSignalMessage('✅ اختبار قناة بوت القرار').catch(console.error);
