@@ -1009,8 +1009,10 @@ ${setup.optionTicker}
 
 💰 سعر السهم الحالي: ${fmtPrice(setup.currentPrice)}
 
-💵 سعر العقد وقت الاختيار: ${fmtPrice(setup.optionEntry)}
-📉 وقف العقد: ${fmtPrice(setup.optionStop)}
+${setup.autoStop
+  ? `💵 سعر العقد وقت الاختيار: ${fmtPrice(setup.optionEntry)}
+🛑 وقف احتياطي للعقد اذا لم يكن هناك وقف قاما: ${fmtPrice(setup.optionStop)}`
+  : `💵 سعر العقد وقت الاختيار: ${fmtPrice(setup.optionEntry)}`}
 
 📍 التفعيل:
 ${activationText}
