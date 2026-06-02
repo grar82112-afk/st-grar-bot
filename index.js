@@ -632,12 +632,20 @@ function parseGex(text) {
   const targets = extractTargets(text);
 
   let stop = extractStop(text);
-  let autoStop = false;
+let autoStop = false;
 
-  if (!stop && entry) {
-    stop = buildAutoStop(entry, side);
-    autoStop = !!stop;
+if (stop && entry) {
+  const stopDistancePct = Math.abs(stop - entry) / entry * 100;
+
+  if (stopDistancePct > 10) {
+    stop = null;
   }
+}
+
+if (!stop && entry) {
+  stop = buildAutoStop(entry, side);
+  autoStop = !!stop;
+}
 
   const strike = getStrikeFromEntry(entry, side);
 
