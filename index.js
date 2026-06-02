@@ -30,7 +30,7 @@ const decisionSupabase = createClient(
 
 const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 20 * 60 * 1000);
 const PRICE_CHECK_MS = Number(process.env.PRICE_CHECK_MS || 30 * 1000);
-const SETUP_EXPIRE_MS = Number(process.env.SETUP_EXPIRE_MS || 45 * 60 * 1000);
+const SETUP_EXPIRE_MS = Number(process.env.SETUP_EXPIRE_MS || 3 * 60 * 60 * 1000);
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 6);
 
@@ -1205,46 +1205,16 @@ async function monitorSetups() {
       const price = await getFinnhubPrice(setup.symbol);
       setup.currentPrice = price;
 
-      if (setup.side === 'CALL') {
-        if (price >= setup.entry) {
-          activeSetups.delete(key);
-          await sendActivatedMessage(setup, price);
-          continue;
-        }
-
-        if (price <= setup.stop) {
-          setup.status = 'CANCELLED';
-          activeSetups.delete(key);
-
-          await sendCancelledMessage(
-            setup,
-            price,
-            'السعر كسر وقف السهم قبل التفعيل'
-          );
-
-          continue;
-        }
+      if (setup.side === 'CALL' && price >= setup.entry) {
+        activeSetups.delete(key);
+        await sendActivatedMessage(setup, price);
+        continue;
       }
 
-      if (setup.side === 'PUT') {
-        if (price <= setup.entry) {
-          activeSetups.delete(key);
-          await sendActivatedMessage(setup, price);
-          continue;
-        }
-
-        if (price >= setup.stop) {
-          setup.status = 'CANCELLED';
-          activeSetups.delete(key);
-
-          await sendCancelledMessage(
-            setup,
-            price,
-            'السعر اخترق وقف السهم قبل التفعيل'
-          );
-
-          continue;
-        }
+      if (setup.side === 'PUT' && price <= setup.entry) {
+        activeSetups.delete(key);
+        await sendActivatedMessage(setup, price);
+        continue;
       }
     } catch (err) {
       console.error('MONITOR SETUP ERROR:', key, err.message);
