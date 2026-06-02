@@ -205,6 +205,7 @@ function isRadarMessage(text) {
     text.includes('اتجاه تدفق العقود')
   );
 }
+
 function extractNumberAfter(label, text) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`${escaped}\\s*:?\\s*\\$?([0-9]+(?:\\.[0-9]+)?)`, 'i');
@@ -277,7 +278,6 @@ function extractRadarSide(text) {
 
   return 'NEUTRAL';
 }
-
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
@@ -707,10 +707,6 @@ function parseRadar(text) {
 // Global Match Logic
 // =====================
 
-// التعديل المهم:
-// القفل أصبح على نفس الشركة ونفس الاتجاه فقط.
-// يعني TSLA CALL لا يتكرر حتى لو تغير السترايك أو تغير optionTicker.
-// ويسمح نظرياً بـ TSLA PUT إذا جاء اتجاه مختلف.
 function buildSetupKey(symbol, side) {
   return `${symbol}:${side}`;
 }
@@ -898,7 +894,8 @@ async function createWatchSetup(symbol, gex, radar) {
   }
 
   let optionData = null;
-    try {
+
+  try {
     optionData = await findBestOptionContract(
       symbol,
       expiration,
@@ -990,7 +987,6 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
-
 // =====================
 // Messages
 // =====================
@@ -1090,6 +1086,8 @@ async function sendActivatedMessage(setup, price) {
   ) {
     activeSetups.delete(setup.key);
     activeTrades.delete(setup.key);
+    sentSetupKeys.delete(setup.key);
+    await deleteActiveTradeFromDb(setup.key);
 
     await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
 
@@ -1128,6 +1126,9 @@ ${setup.optionTicker || 'غير متوفر'}
   setup.status = 'ACTIVE';
 
   activeTrades.set(setup.key, setup);
+  sentSetupKeys.add(setup.key);
+
+  await saveActiveTradeToDb(setup);
 
   const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
 
@@ -1163,6 +1164,7 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 
   await sendSignalMessage(text);
 }
+
 async function sendCancelledMessage(setup, price, reason) {
   const text = `❌ تم إلغاء صفقة المراقبة — ST Decision
 
@@ -1181,6 +1183,100 @@ ${reason}`;
 }
 
 // =====================
+// Database Active Trades
+// =====================
+
+async function saveActiveTradeToDb(trade) {
+  try {
+    await decisionSupabase
+      .from('decision_active_trades')
+      .upsert({
+        id: trade.key,
+        symbol: trade.symbol,
+        side: trade.side,
+        status: trade.status || 'ACTIVE',
+        entry: trade.entry,
+        stop: trade.stop,
+        strike: trade.strike,
+        expiration: trade.expiration,
+        option_ticker: trade.optionTicker,
+        option_entry: trade.optionEntry,
+        option_stop: trade.optionStop,
+        last_contract_update_price: trade.lastContractUpdatePrice,
+        activated_at: trade.activatedAt
+          ? new Date(trade.activatedAt).toISOString()
+          : new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+  } catch (err) {
+    console.error('SAVE ACTIVE TRADE DB ERROR:', err.message);
+  }
+}
+
+async function deleteActiveTradeFromDb(id) {
+  try {
+    await decisionSupabase
+      .from('decision_active_trades')
+      .delete()
+      .eq('id', id);
+  } catch (err) {
+    console.error('DELETE ACTIVE TRADE DB ERROR:', err.message);
+  }
+}
+
+async function loadActiveTradesFromDb() {
+  try {
+    const { data, error } = await decisionSupabase
+      .from('decision_active_trades')
+      .select('*')
+      .eq('status', 'ACTIVE');
+
+    if (error) {
+      console.error('LOAD ACTIVE TRADES DB ERROR:', error.message);
+      return;
+    }
+
+    for (const row of data || []) {
+      if (!row.id || !row.symbol || !row.option_ticker) continue;
+
+      const trade = {
+        key: row.id,
+        symbol: row.symbol,
+        side: row.side,
+        status: row.status || 'ACTIVE',
+
+        entry: Number(row.entry),
+        stop: Number(row.stop),
+        strike: Number(row.strike),
+        expiration: row.expiration,
+
+        optionTicker: row.option_ticker,
+        optionEntry: Number(row.option_entry),
+        optionStop: Number(row.option_stop),
+        lastContractUpdatePrice: Number(row.last_contract_update_price),
+
+        optionBid: null,
+        optionAsk: null,
+        optionLast: null,
+        optionVolume: null,
+        optionOi: null,
+        optionDelta: null,
+        optionGamma: null,
+
+        activatedAt: row.activated_at ? new Date(row.activated_at).getTime() : now(),
+        createdAt: row.created_at ? new Date(row.created_at).getTime() : now()
+      };
+
+      activeTrades.set(trade.key, trade);
+      sentSetupKeys.add(trade.key);
+    }
+
+    console.log(`✅ LOADED ACTIVE TRADES FROM DB: ${activeTrades.size}`);
+  } catch (err) {
+    console.error('LOAD ACTIVE TRADES DB ERROR:', err.message);
+  }
+}
+// =====================
 // Monitors
 // =====================
 
@@ -1192,7 +1288,8 @@ async function monitorSetups() {
       if (now() - setup.createdAt > SETUP_EXPIRE_MS) {
         setup.status = 'EXPIRED';
         activeSetups.delete(key);
-
+        sentSetupKeys.delete(setup.key);
+        
         await sendCancelledMessage(
           setup,
           setup.currentPrice,
@@ -1243,6 +1340,8 @@ async function monitorActiveTrades() {
 
       if (trade.optionStop && optionPrice <= trade.optionStop) {
         activeTrades.delete(key);
+        sentSetupKeys.delete(trade.key);
+        await deleteActiveTradeFromDb(key);
 
         await sendSignalMessage(`🛑 ضرب وقف العقد — ST Decision
 
@@ -1264,6 +1363,8 @@ ${trade.optionTicker}
 
       if (optionPrice >= lastUpdate + CONTRACT_UPDATE_STEP) {
         trade.lastContractUpdatePrice = optionPrice;
+
+        await saveActiveTradeToDb(trade);
 
         await sendSignalMessage(`📈 تحديث العقد — ST Decision
 
@@ -1357,6 +1458,9 @@ ${MAX_ENTRY_DISTANCE_PCT}%
 يمنع تكرار نفس الشركة ونفس الاتجاه.
 مثال: TSLA CALL لا يتكرر حتى لو تغير السترايك.
 
+حفظ الصفقات:
+الصفقات المفعلة تحفظ في Supabase وتعود بعد Restart أو Deploy.
+
 طريقة القرار:
 يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
 ثم يبحث عن نفس الشركة ونفس الاتجاه
@@ -1365,7 +1469,7 @@ ${MAX_ENTRY_DISTANCE_PCT}%
 أولوية لخلاصة المتابعة. إذا الخلاصة تقول انتظر = لا صفقة.
 
 طريقة الوقف:
-وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 0.5%`,
+وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 1.5%`,
         msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}
       );
     }
@@ -1401,6 +1505,8 @@ ${MAX_ENTRY_DISTANCE_PCT}%
 bot.on('polling_error', (err) => {
   console.error('POLLING ERROR:', err.message);
 });
+
+loadActiveTradesFromDb();
 
 setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
