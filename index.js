@@ -130,6 +130,7 @@ async function processDecisionMessages() {
 console.log('🚀 ST Decision Bot Started');
 
 bot.sendMessage(ADMIN_CHAT_ID, '✅ ST Decision Bot Started').catch(() => {});
+
 // =====================
 // Helpers
 // =====================
@@ -204,7 +205,6 @@ function isRadarMessage(text) {
     text.includes('اتجاه تدفق العقود')
   );
 }
-
 function extractNumberAfter(label, text) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`${escaped}\\s*:?\\s*\\$?([0-9]+(?:\\.[0-9]+)?)`, 'i');
@@ -254,7 +254,8 @@ function extractRadarSide(text) {
   ) {
     return 'PUT';
   }
-    if (
+
+  if (
     text.includes('سيطرة الكول') ||
     text.includes('الكول يسيطر') ||
     text.includes('المشترون يسيطرون') ||
@@ -515,6 +516,7 @@ async function getMassiveOptionChain(symbol, expiration, side) {
 
   return all;
 }
+
 // =====================
 // Option Selection
 // =====================
@@ -611,7 +613,6 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
 
   return normalized[0];
 }
-
 // =====================
 // Parsers
 // =====================
@@ -632,20 +633,20 @@ function parseGex(text) {
   const targets = extractTargets(text);
 
   let stop = extractStop(text);
-let autoStop = false;
+  let autoStop = false;
 
-if (stop && entry) {
-  const stopDistancePct = Math.abs(stop - entry) / entry * 100;
+  if (stop && entry) {
+    const stopDistancePct = Math.abs(stop - entry) / entry * 100;
 
-  if (stopDistancePct > 10) {
-    stop = null;
+    if (stopDistancePct > 10) {
+      stop = null;
+    }
   }
-}
 
-if (!stop && entry) {
-  stop = buildAutoStop(entry, side);
-  autoStop = !!stop;
-}
+  if (!stop && entry) {
+    stop = buildAutoStop(entry, side);
+    autoStop = !!stop;
+  }
 
   const strike = getStrikeFromEntry(entry, side);
 
@@ -700,12 +701,17 @@ function parseRadar(text) {
     time: now()
   };
 }
+
 // =====================
 // Global Match Logic
 // =====================
 
-function buildSetupKey(symbol, side, entry, expiration, optionTicker) {
-  return `${symbol}:${side}:${entry}:${expiration || 'NA'}:${optionTicker || 'NA'}`;
+// التعديل المهم:
+// القفل أصبح على نفس الشركة ونفس الاتجاه فقط.
+// يعني TSLA CALL لا يتكرر حتى لو تغير السترايك أو تغير optionTicker.
+// ويسمح نظرياً بـ TSLA PUT إذا جاء اتجاه مختلف.
+function buildSetupKey(symbol, side) {
+  return `${symbol}:${side}`;
 }
 
 function findMatchingPairs() {
@@ -889,9 +895,9 @@ async function createWatchSetup(symbol, gex, radar) {
     await notifyAdminReject(symbol, reason);
     return;
   }
-    let optionData = null;
 
-  try {
+  let optionData = null;
+    try {
     optionData = await findBestOptionContract(
       symbol,
       expiration,
@@ -917,16 +923,14 @@ async function createWatchSetup(symbol, gex, radar) {
     return;
   }
 
-  const setupKey = buildSetupKey(
-    symbol,
-    gex.side,
-    gex.entry,
-    expiration,
-    optionData.optionTicker
-  );
+  const setupKey = buildSetupKey(symbol, gex.side);
 
-  if (sentSetupKeys.has(setupKey)) {
-    console.log('DUPLICATE SETUP:', setupKey);
+  const alreadyWatching = activeSetups.has(setupKey);
+  const alreadyActive = activeTrades.has(setupKey);
+  const alreadySent = sentSetupKeys.has(setupKey);
+
+  if (alreadyWatching || alreadyActive || alreadySent) {
+    console.log('DUPLICATE SYMBOL/SIDE BLOCKED:', setupKey);
     return;
   }
 
@@ -1246,6 +1250,7 @@ async function monitorSetups() {
     }
   }
 }
+
 async function monitorActiveTrades() {
   for (const [key, trade] of activeTrades.entries()) {
     try {
@@ -1343,7 +1348,7 @@ bot.on('message', async (msg) => {
       );
     }
 
-    if (text === '/status') {
+    if (text === '/status' || text === '/botstatus') {
       const gexList = recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
       const radarList = recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
 
@@ -1376,6 +1381,10 @@ ${MIN_CONTRACT_PRICE} إلى ${MAX_CONTRACT_PRICE}
 
 أقصى بُعد للدخول عن السعر الحالي:
 ${MAX_ENTRY_DISTANCE_PCT}%
+
+طريقة منع التكرار:
+يمنع تكرار نفس الشركة ونفس الاتجاه.
+مثال: TSLA CALL لا يتكرر حتى لو تغير السترايك.
 
 طريقة القرار:
 يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
