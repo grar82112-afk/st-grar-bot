@@ -364,11 +364,12 @@ function extractStop(text) {
 function buildAutoStop(entry, side) {
   if (!entry || !['CALL', 'PUT'].includes(side)) return null;
 
-  if (side === 'CALL') return entry * 0.995;
-  if (side === 'PUT') return entry * 1.005;
+  if (side === 'CALL') return entry * 0.985;
+  if (side === 'PUT') return entry * 1.015;
 
   return null;
 }
+
 function extractSuggestedExpiration(text) {
   const m =
     text.match(/الانتهاء المقترح:\s*\n?\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
