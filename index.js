@@ -34,11 +34,11 @@ const SETUP_EXPIRE_MS = Number(process.env.SETUP_EXPIRE_MS || 3 * 60 * 60 * 1000
 
 const MIN_SCORE = Number(process.env.MIN_SCORE || 6);
 
-const MIN_CONTRACT_PRICE = Number(process.env.MIN_CONTRACT_PRICE || 0.80);
-const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 4.00);
+const MIN_CONTRACT_PRICE = Number(process.env.MIN_CONTRACT_PRICE || 1.00);
+const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 2.70);
 
 const CONTRACT_UPDATE_STEP = Number(process.env.CONTRACT_UPDATE_STEP || 0.10);
-const CONTRACT_STOP_DROP = Number(process.env.CONTRACT_STOP_DROP || 0.30);
+const CONTRACT_STOP_DROP = Number(process.env.CONTRACT_STOP_DROP || 0.65);
 
 const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 5);
 
