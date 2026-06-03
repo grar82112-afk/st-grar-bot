@@ -41,11 +41,11 @@ const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 2.70);
 // Option Quality Filters
 // تمنع اختيار عقود ضعيفة السيولة مثل OI=2 و Volume=10
 // =====================
-const MIN_OPTION_OI = Number(process.env.MIN_OPTION_OI || 50);
-const MIN_OPTION_VOLUME = Number(process.env.MIN_OPTION_VOLUME || 25);
-const MAX_OPTION_SPREAD_PCT = Number(process.env.MAX_OPTION_SPREAD_PCT || 15);
-const MIN_OPTION_DELTA = Number(process.env.MIN_OPTION_DELTA || 0.30);
-const MAX_OPTION_DELTA = Number(process.env.MAX_OPTION_DELTA || 0.55);
+const MIN_OPTION_OI = Number(process.env.MIN_OPTION_OI || 25);
+const MIN_OPTION_VOLUME = Number(process.env.MIN_OPTION_VOLUME || 10);
+const MAX_OPTION_SPREAD_PCT = Number(process.env.MAX_OPTION_SPREAD_PCT || 20);
+const MIN_OPTION_DELTA = Number(process.env.MIN_OPTION_DELTA || 0.25);
+const MAX_OPTION_DELTA = Number(process.env.MAX_OPTION_DELTA || 0.60);
 
 const CONTRACT_UPDATE_STEP = Number(process.env.CONTRACT_UPDATE_STEP || 0.10);
 const CONTRACT_STOP_DROP = Number(process.env.CONTRACT_STOP_DROP || 0.65);
