@@ -139,6 +139,84 @@ function now() {
   return Date.now();
 }
 
+// =====================
+// Market Time Filter - Saudi Time
+// Summer: 4:30 PM - 11:00 PM KSA
+// Winter: 5:30 PM - 12:00 AM KSA
+// =====================
+
+function getSaudiTimeParts() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(new Date());
+
+  const obj = {};
+
+  for (const p of parts) {
+    obj[p.type] = p.value;
+  }
+
+  return {
+    year: Number(obj.year),
+    month: Number(obj.month),
+    day: Number(obj.day),
+    hour: Number(obj.hour),
+    minute: Number(obj.minute)
+  };
+}
+
+function getUsDstRangeUtc(year) {
+  function nthSunday(monthIndex, nth) {
+    const d = new Date(Date.UTC(year, monthIndex, 1));
+    const firstSunday = 1 + ((7 - d.getUTCDay()) % 7);
+    return firstSunday + (nth - 1) * 7;
+  }
+
+  const dstStartDay = nthSunday(2, 2);
+  const dstEndDay = nthSunday(10, 1);
+
+  const dstStartUtc = Date.UTC(year, 2, dstStartDay, 7, 0, 0);
+  const dstEndUtc = Date.UTC(year, 10, dstEndDay, 6, 0, 0);
+
+  return { dstStartUtc, dstEndUtc };
+}
+
+function isUsDstNow() {
+  const d = new Date();
+  const year = d.getUTCFullYear();
+  const { dstStartUtc, dstEndUtc } = getUsDstRangeUtc(year);
+  const t = d.getTime();
+
+  return t >= dstStartUtc && t < dstEndUtc;
+}
+
+function minutesNowSaudi() {
+  const t = getSaudiTimeParts();
+  return t.hour * 60 + t.minute;
+}
+
+function isDecisionTradingTime() {
+  const m = minutesNowSaudi();
+  const summer = isUsDstNow();
+
+  const start = summer ? (16 * 60 + 30) : (17 * 60 + 30);
+  const end = summer ? (23 * 60) : (24 * 60);
+
+  return m >= start && m <= end;
+}
+
+function tradingTimeText() {
+  return isUsDstNow()
+    ? 'الصيف: 4:30 م إلى 11:00 م بتوقيت السعودية'
+    : 'الشتاء: 5:30 م إلى 12:00 ص بتوقيت السعودية';
+}
+
 function fmtPrice(n) {
   if (n === null || n === undefined || isNaN(Number(n))) return 'غير متوفر';
   return Number(n).toFixed(2);
@@ -186,7 +264,6 @@ function getSymbolFromText(text) {
 
   return null;
 }
-
 function isGexMessage(text) {
   return (
     text.includes('ST Smart Flow Alert') ||
@@ -278,6 +355,7 @@ function extractRadarSide(text) {
 
   return 'NEUTRAL';
 }
+
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
@@ -407,7 +485,6 @@ function getStrikeFromEntry(entry, side) {
 
   return null;
 }
-
 function getContractDisplay(data) {
   if (!data || !data.symbol || !data.strike || !data.side) {
     return 'غير متوفر';
@@ -614,6 +691,7 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
 
   return normalized[0];
 }
+
 // =====================
 // Parsers
 // =====================
@@ -702,7 +780,6 @@ function parseRadar(text) {
     time: now()
   };
 }
-
 // =====================
 // Global Match Logic
 // =====================
@@ -834,6 +911,15 @@ async function scanGlobalMatches() {
 }
 
 async function createWatchSetup(symbol, gex, radar) {
+  if (!isDecisionTradingTime()) {
+    console.log(`OUTSIDE TRADING TIME - BLOCKED: ${symbol}`);
+    await notifyAdminReject(
+      symbol,
+      `خارج وقت الصفقات المسموح: ${tradingTimeText()}`
+    );
+    return;
+  }
+
   const decision = canCreateDecision(gex, radar);
 
   if (!decision.ok) {
@@ -1063,6 +1149,19 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 }
 
 async function sendActivatedMessage(setup, price) {
+  if (!isDecisionTradingTime()) {
+    console.log(`ACTIVATION OUTSIDE TRADING TIME - BLOCKED: ${setup.symbol}`);
+    activeSetups.delete(setup.key);
+    sentSetupKeys.delete(setup.key);
+
+    await notifyAdminReject(
+      setup.symbol,
+      `تم منع التفعيل خارج وقت الصفقات المسموح: ${tradingTimeText()}`
+    );
+
+    return;
+  }
+
   const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
   const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
 
@@ -1285,11 +1384,15 @@ async function monitorSetups() {
     try {
       if (setup.status !== 'WATCHING') continue;
 
+      if (!isDecisionTradingTime()) {
+        continue;
+      }
+
       if (now() - setup.createdAt > SETUP_EXPIRE_MS) {
         setup.status = 'EXPIRED';
         activeSetups.delete(key);
         sentSetupKeys.delete(setup.key);
-        
+
         await sendCancelledMessage(
           setup,
           setup.currentPrice,
@@ -1453,6 +1556,12 @@ ${MIN_CONTRACT_PRICE} إلى ${MAX_CONTRACT_PRICE}
 
 أقصى بُعد للدخول عن السعر الحالي:
 ${MAX_ENTRY_DISTANCE_PCT}%
+
+وقت الصفقات المسموح:
+${tradingTimeText()}
+
+حالة الوقت الآن:
+${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج وقت الصفقات'}
 
 طريقة منع التكرار:
 يمنع تكرار نفس الشركة ونفس الاتجاه.
