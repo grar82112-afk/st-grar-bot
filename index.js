@@ -37,6 +37,16 @@ const MIN_SCORE = Number(process.env.MIN_SCORE || 6);
 const MIN_CONTRACT_PRICE = Number(process.env.MIN_CONTRACT_PRICE || 1.00);
 const MAX_CONTRACT_PRICE = Number(process.env.MAX_CONTRACT_PRICE || 2.70);
 
+// =====================
+// Option Quality Filters
+// تمنع اختيار عقود ضعيفة السيولة مثل OI=2 و Volume=10
+// =====================
+const MIN_OPTION_OI = Number(process.env.MIN_OPTION_OI || 50);
+const MIN_OPTION_VOLUME = Number(process.env.MIN_OPTION_VOLUME || 25);
+const MAX_OPTION_SPREAD_PCT = Number(process.env.MAX_OPTION_SPREAD_PCT || 15);
+const MIN_OPTION_DELTA = Number(process.env.MIN_OPTION_DELTA || 0.30);
+const MAX_OPTION_DELTA = Number(process.env.MAX_OPTION_DELTA || 0.55);
+
 const CONTRACT_UPDATE_STEP = Number(process.env.CONTRACT_UPDATE_STEP || 0.10);
 const CONTRACT_STOP_DROP = Number(process.env.CONTRACT_STOP_DROP || 0.65);
 
@@ -195,7 +205,6 @@ function isUsDstNow() {
 
   return t >= dstStartUtc && t < dstEndUtc;
 }
-
 function minutesNowSaudi() {
   const t = getSaudiTimeParts();
   return t.hour * 60 + t.minute;
@@ -264,6 +273,7 @@ function getSymbolFromText(text) {
 
   return null;
 }
+
 function isGexMessage(text) {
   return (
     text.includes('ST Smart Flow Alert') ||
@@ -403,7 +413,6 @@ function extractCurrentPriceFromText(text) {
 
   return null;
 }
-
 function isReadyText(text) {
   return (
     text.includes('جاهزة') ||
@@ -485,6 +494,7 @@ function getStrikeFromEntry(entry, side) {
 
   return null;
 }
+
 function getContractDisplay(data) {
   if (!data || !data.symbol || !data.strike || !data.side) {
     return 'غير متوفر';
@@ -621,6 +631,39 @@ function normalizeChainContract(item) {
   };
 }
 
+function getSpreadPct(c) {
+  const bid = Number(c.bid || 0);
+  const ask = Number(c.ask || 0);
+
+  if (bid <= 0 || ask <= 0) return 999;
+
+  const mid = (bid + ask) / 2;
+  return ((ask - bid) / mid) * 100;
+}
+function isGoodOptionContract(c, side) {
+  const oi = Number(c.oi || 0);
+  const volume = Number(c.volume || 0);
+  const delta = Number(c.delta);
+  const spreadPct = getSpreadPct(c);
+
+  if (oi < MIN_OPTION_OI) return false;
+  if (volume < MIN_OPTION_VOLUME) return false;
+  if (spreadPct > MAX_OPTION_SPREAD_PCT) return false;
+
+  if (!isNaN(delta)) {
+    if (side === 'CALL') {
+      if (delta < MIN_OPTION_DELTA || delta > MAX_OPTION_DELTA) return false;
+    }
+
+    if (side === 'PUT') {
+      const absDelta = Math.abs(delta);
+      if (absDelta < MIN_OPTION_DELTA || absDelta > MAX_OPTION_DELTA) return false;
+    }
+  }
+
+  return true;
+}
+
 function scoreOptionContract(c, preferredStrike, side) {
   const distance = Math.abs(c.strike - preferredStrike);
 
@@ -632,23 +675,19 @@ function scoreOptionContract(c, preferredStrike, side) {
 
   if (!isNaN(delta)) {
     if (side === 'CALL') {
-      if (delta >= 0.25 && delta <= 0.65) deltaScore = 3;
-      else if (delta >= 0.15 && delta <= 0.75) deltaScore = 1.5;
+      if (delta >= 0.30 && delta <= 0.55) deltaScore = 3;
+      else if (delta >= 0.25 && delta <= 0.65) deltaScore = 1.5;
     }
 
     if (side === 'PUT') {
-      if (delta <= -0.25 && delta >= -0.65) deltaScore = 3;
-      else if (delta <= -0.15 && delta >= -0.75) deltaScore = 1.5;
+      const absDelta = Math.abs(delta);
+      if (absDelta >= 0.30 && absDelta <= 0.55) deltaScore = 3;
+      else if (absDelta >= 0.25 && absDelta <= 0.65) deltaScore = 1.5;
     }
   }
 
-  const spread = Number(c.ask || 0) - Number(c.bid || 0);
-  let spreadPenalty = 0;
-
-  if (c.bid > 0 && c.ask > 0) {
-    spreadPenalty = Math.min(spread / 0.20, 2);
-  }
-
+  const spreadPct = getSpreadPct(c);
+  const spreadPenalty = Math.min(spreadPct / 10, 3);
   const distancePenalty = distance * 0.10;
 
   return volumeScore + oiScore + deltaScore - distancePenalty - spreadPenalty;
@@ -672,11 +711,16 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
       c.optionTicker &&
       c.strike > 0 &&
       c.mid >= MIN_CONTRACT_PRICE &&
-      c.mid <= MAX_CONTRACT_PRICE
+      c.mid <= MAX_CONTRACT_PRICE &&
+      isGoodOptionContract(c, side)
     );
 
   if (!normalized.length) {
-    console.log(`NO CHAIN CONTRACT IN RANGE ${symbol} ${expiration} ${side}`);
+    console.log(
+      `NO GOOD CONTRACT FOUND ${symbol} ${expiration} ${side} | ` +
+      `Filters: OI>=${MIN_OPTION_OI}, VOL>=${MIN_OPTION_VOLUME}, ` +
+      `Spread<=${MAX_OPTION_SPREAD_PCT}%, Delta=${MIN_OPTION_DELTA}-${MAX_OPTION_DELTA}`
+    );
     return null;
   }
 
@@ -780,6 +824,7 @@ function parseRadar(text) {
     time: now()
   };
 }
+
 // =====================
 // Global Match Logic
 // =====================
@@ -858,8 +903,7 @@ function canCreateDecision(gex, radar) {
       reason: 'لا يوجد مستوى دخول واضح ولا إشارة جاهزة'
     };
   }
-
-  if (!gex.stop && gex.entry) {
+    if (!gex.stop && gex.entry) {
     gex.stop = buildAutoStop(gex.entry, gex.side);
     gex.autoStop = true;
   }
@@ -999,10 +1043,13 @@ async function createWatchSetup(symbol, gex, radar) {
     optionData.mid > MAX_CONTRACT_PRICE
   ) {
     const reason =
-      `لا يوجد عقد داخل النطاق ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}. ` +
+      `لا يوجد عقد مناسب داخل الشروط. ` +
+      `نطاق السعر: ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}. ` +
+      `OI>=${MIN_OPTION_OI}, VOL>=${MIN_OPTION_VOLUME}, ` +
+      `Spread<=${MAX_OPTION_SPREAD_PCT}%, Delta=${MIN_OPTION_DELTA}-${MAX_OPTION_DELTA}. ` +
       `السعر المتوفر: ${fmtPrice(optionData?.mid)}`;
 
-    console.log(`NO CONTRACT IN PRICE RANGE ${symbol}:`, optionData?.mid || 'NA');
+    console.log(`NO GOOD CONTRACT ${symbol}:`, optionData?.mid || 'NA');
     await notifyAdminReject(symbol, reason);
     return;
   }
@@ -1043,6 +1090,7 @@ async function createWatchSetup(symbol, gex, radar) {
     optionOi: optionData.oi,
     optionDelta: optionData.delta,
     optionGamma: optionData.gamma,
+    optionSpreadPct: getSpreadPct(optionData),
     optionStop: Math.max(optionData.mid - CONTRACT_STOP_DROP, 0.01),
     lastContractUpdatePrice: optionData.mid,
 
@@ -1073,6 +1121,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
+
 // =====================
 // Messages
 // =====================
@@ -1127,10 +1176,19 @@ ${fmtPrice(setup.stop)}
 Bid: ${fmtPrice(setup.optionBid)}
 Ask: ${fmtPrice(setup.optionAsk)}
 Last: ${fmtPrice(setup.optionLast)}
+Spread: ${fmtPrice(setup.optionSpreadPct)}%
 OI: ${fmtNum(setup.optionOi)}
 Volume: ${fmtNum(setup.optionVolume)}
 Delta: ${setup.optionDelta ?? 'غير متوفر'}
 Gamma: ${setup.optionGamma ?? 'غير متوفر'}
+
+━━━━━━━━━━━━━━
+📊 فلتر جودة العقد
+
+✅ OI المطلوب: ${MIN_OPTION_OI}+
+✅ Volume المطلوب: ${MIN_OPTION_VOLUME}+
+✅ Spread الأقصى: ${MAX_OPTION_SPREAD_PCT}%
+✅ Delta المطلوب: ${MIN_OPTION_DELTA} - ${MAX_OPTION_DELTA}
 
 ━━━━━━━━━━━━━━
 📊 سبب الصفقة
@@ -1147,7 +1205,6 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
   await sendSignalMessage(text);
 }
-
 async function sendActivatedMessage(setup, price) {
   if (!isDecisionTradingTime()) {
     console.log(`ACTIVATION OUTSIDE TRADING TIME - BLOCKED: ${setup.symbol}`);
@@ -1219,6 +1276,7 @@ ${setup.optionTicker || 'غير متوفر'}
   setup.optionOi = optionData?.oi || setup.optionOi;
   setup.optionDelta = optionData?.delta ?? setup.optionDelta;
   setup.optionGamma = optionData?.gamma ?? setup.optionGamma;
+  setup.optionSpreadPct = getSpreadPct(setup);
 
   setup.lastContractUpdatePrice = optionEntry;
   setup.activatedAt = now();
@@ -1256,6 +1314,9 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 
 📦 OI: ${fmtNum(setup.optionOi)}
 📊 Volume: ${fmtNum(setup.optionVolume)}
+📉 Spread: ${fmtPrice(setup.optionSpreadPct)}%
+Delta: ${setup.optionDelta ?? 'غير متوفر'}
+Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
 🔔 سيتم إرسال تحديث كلما ارتفع العقد +${CONTRACT_UPDATE_STEP.toFixed(2)}
 
@@ -1361,6 +1422,7 @@ async function loadActiveTradesFromDb() {
         optionOi: null,
         optionDelta: null,
         optionGamma: null,
+        optionSpreadPct: null,
 
         activatedAt: row.activated_at ? new Date(row.activated_at).getTime() : now(),
         createdAt: row.created_at ? new Date(row.created_at).getTime() : now()
@@ -1375,6 +1437,7 @@ async function loadActiveTradesFromDb() {
     console.error('LOAD ACTIVE TRADES DB ERROR:', err.message);
   }
 }
+
 // =====================
 // Monitors
 // =====================
@@ -1440,6 +1503,7 @@ async function monitorActiveTrades() {
       trade.optionOi = optionData.oi || trade.optionOi;
       trade.optionDelta = optionData.delta ?? trade.optionDelta;
       trade.optionGamma = optionData.gamma ?? trade.optionGamma;
+      trade.optionSpreadPct = getSpreadPct(trade);
 
       if (trade.optionStop && optionPrice <= trade.optionStop) {
         activeTrades.delete(key);
@@ -1482,7 +1546,8 @@ ${trade.optionTicker}
 
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 📦 OI: ${fmtNum(trade.optionOi)}
-📊 Volume: ${fmtNum(trade.optionVolume)}`);
+📊 Volume: ${fmtNum(trade.optionVolume)}
+📉 Spread: ${fmtPrice(trade.optionSpreadPct)}%`);
       }
     } catch (err) {
       console.error('ACTIVE TRADE MONITOR ERROR:', key, err.message);
@@ -1553,6 +1618,12 @@ ${MIN_SCORE} / 10
 
 نطاق سعر العقد:
 ${MIN_CONTRACT_PRICE} إلى ${MAX_CONTRACT_PRICE}
+
+فلتر جودة العقد:
+OI المطلوب: ${MIN_OPTION_OI}+
+Volume المطلوب: ${MIN_OPTION_VOLUME}+
+Spread الأقصى: ${MAX_OPTION_SPREAD_PCT}%
+Delta المطلوب: ${MIN_OPTION_DELTA} - ${MAX_OPTION_DELTA}
 
 أقصى بُعد للدخول عن السعر الحالي:
 ${MAX_ENTRY_DISTANCE_PCT}%
