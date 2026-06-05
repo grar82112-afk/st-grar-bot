@@ -1651,6 +1651,14 @@ bot.on('message', async (msg) => {
     const text = cleanText(msg.text);
     if (!text) return;
 
+    if (
+  text !== '/ping' &&
+  text !== '/status' &&
+  text !== '/botstatus'
+) {
+  return;
+}
+
     if (text === '/ping') {
       return bot.sendMessage(
         msg.chat.id,
