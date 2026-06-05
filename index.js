@@ -195,6 +195,7 @@ function isUsDstNow() {
 
   return t >= dstStartUtc && t < dstEndUtc;
 }
+
 function minutesNowSaudi() {
   const t = getSaudiTimeParts();
   return t.hour * 60 + t.minute;
@@ -243,7 +244,6 @@ function pushGlobalHistory(arr, item, limit = HISTORY_LIMIT) {
     arr.length = limit;
   }
 }
-
 function isFresh(item) {
   return item && now() - item.time <= MATCH_WINDOW_MS;
 }
@@ -355,6 +355,7 @@ function extractRadarSide(text) {
 
   return 'NEUTRAL';
 }
+
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
@@ -461,7 +462,6 @@ function extractDominantExpiration(text) {
   if (!matches.length) return null;
   return matches[0][1];
 }
-
 function getStrikeStep(price) {
   if (price >= 1000) return 10;
   if (price >= 500) return 5;
@@ -629,6 +629,7 @@ ${trade.optionTicker}
 
 📌 تم إيقاف المتابعة.`);
 }
+
 // =====================
 // API
 // =====================
@@ -698,7 +699,6 @@ async function getMassiveOptionChain(symbol, expiration, side) {
 
   return all;
 }
-
 // =====================
 // Option Selection
 // =====================
@@ -913,6 +913,7 @@ function findMatchingPairs() {
 
   return pairs;
 }
+
 function canCreateDecision(gex, radar) {
   if (!isFresh(gex) || !isFresh(radar)) {
     return {
@@ -991,7 +992,6 @@ function canCreateDecision(gex, radar) {
     reason: 'توافق كامل'
   };
 }
-
 async function notifyAdminReject(symbol, reason) {
   if (!ADMIN_CHAT_ID) return;
 
@@ -1156,6 +1156,7 @@ async function createWatchSetup(symbol, gex, radar) {
     tp1Hit: false,
     tp2Hit: false,
     tp3Hit: false,
+    slHit: false,
 
     score: gex.score,
     currentPrice,
@@ -1294,7 +1295,8 @@ async function sendActivatedMessage(setup, price) {
     activeSetups.delete(setup.key);
     activeTrades.delete(setup.key);
     sentSetupKeys.delete(setup.key);
-    await deleteActiveTradeFromDb(setup.key);
+
+    await closeActiveTradeInDb(setup.key, 'CANCELLED_PRICE_RANGE');
 
     await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
 
@@ -1335,6 +1337,7 @@ ${setup.optionTicker || 'غير متوفر'}
   setup.tp1Hit = setup.tp1Hit || false;
   setup.tp2Hit = setup.tp2Hit || false;
   setup.tp3Hit = setup.tp3Hit || false;
+  setup.slHit = setup.slHit || false;
 
   activeTrades.set(setup.key, setup);
   sentSetupKeys.add(setup.key);
@@ -1414,6 +1417,15 @@ async function saveActiveTradeToDb(trade) {
         option_entry: trade.optionEntry,
         option_stop: trade.optionStop,
         last_contract_update_price: trade.lastContractUpdatePrice,
+
+        tp1: trade.tp1 || null,
+        tp2: trade.tp2 || null,
+        tp3: trade.tp3 || null,
+        tp1_hit: !!trade.tp1Hit,
+        tp2_hit: !!trade.tp2Hit,
+        tp3_hit: !!trade.tp3Hit,
+        sl_hit: !!trade.slHit,
+
         activated_at: trade.activatedAt
           ? new Date(trade.activatedAt).toISOString()
           : new Date().toISOString(),
@@ -1424,14 +1436,21 @@ async function saveActiveTradeToDb(trade) {
   }
 }
 
-async function deleteActiveTradeFromDb(id) {
+async function closeActiveTradeInDb(id, reason, extra = {}) {
   try {
     await decisionSupabase
       .from('decision_active_trades')
-      .delete()
+      .update({
+        status: reason === 'EXPIRED' ? 'EXPIRED' : 'CLOSED',
+        close_reason: reason,
+        closed_at: new Date().toISOString(),
+        expired_at: reason === 'EXPIRED' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+        ...extra
+      })
       .eq('id', id);
   } catch (err) {
-    console.error('DELETE ACTIVE TRADE DB ERROR:', err.message);
+    console.error('CLOSE ACTIVE TRADE DB ERROR:', err.message);
   }
 }
 
@@ -1480,6 +1499,7 @@ async function loadActiveTradesFromDb() {
         tp1Hit: !!row.tp1_hit,
         tp2Hit: !!row.tp2_hit,
         tp3Hit: !!row.tp3_hit,
+        slHit: !!row.sl_hit,
 
         activatedAt: row.activated_at ? new Date(row.activated_at).getTime() : now(),
         createdAt: row.created_at ? new Date(row.created_at).getTime() : now()
@@ -1566,11 +1586,13 @@ async function monitorActiveTrades() {
       if (!trade.tp1Hit && hasTargetHit(trade, stockPrice, trade.tp1)) {
         trade.tp1Hit = true;
         await sendTargetHitMessage(trade, 'TP1', stockPrice, optionPrice);
+        await saveActiveTradeToDb(trade);
       }
 
       if (!trade.tp2Hit && hasTargetHit(trade, stockPrice, trade.tp2)) {
         trade.tp2Hit = true;
         await sendTargetHitMessage(trade, 'TP2', stockPrice, optionPrice);
+        await saveActiveTradeToDb(trade);
       }
 
       if (!trade.tp3Hit && hasTargetHit(trade, stockPrice, trade.tp3)) {
@@ -1579,14 +1601,29 @@ async function monitorActiveTrades() {
 
         activeTrades.delete(key);
         sentSetupKeys.delete(trade.key);
-        await deleteActiveTradeFromDb(key);
+
+        await closeActiveTradeInDb(key, 'TP3', {
+          tp1_hit: !!trade.tp1Hit,
+          tp2_hit: !!trade.tp2Hit,
+          tp3_hit: true,
+          sl_hit: false
+        });
+
         continue;
       }
 
       if (trade.optionStop && optionPrice <= trade.optionStop) {
+        trade.slHit = true;
+
         activeTrades.delete(key);
         sentSetupKeys.delete(trade.key);
-        await deleteActiveTradeFromDb(key);
+
+        await closeActiveTradeInDb(key, 'SL', {
+          tp1_hit: !!trade.tp1Hit,
+          tp2_hit: !!trade.tp2Hit,
+          tp3_hit: !!trade.tp3Hit,
+          sl_hit: true
+        });
 
         await sendBetterStopMessage(trade, optionPrice);
 
@@ -1652,12 +1689,12 @@ bot.on('message', async (msg) => {
     if (!text) return;
 
     if (
-  text !== '/ping' &&
-  text !== '/status' &&
-  text !== '/botstatus'
-) {
-  return;
-}
+      text !== '/ping' &&
+      text !== '/status' &&
+      text !== '/botstatus'
+    ) {
+      return;
+    }
 
     if (text === '/ping') {
       return bot.sendMessage(
