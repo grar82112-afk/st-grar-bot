@@ -264,6 +264,7 @@ function getSymbolFromText(text) {
 
   return null;
 }
+
 function isGexMessage(text) {
   return (
     text.includes('ST Smart Flow Alert') ||
@@ -273,7 +274,6 @@ function isGexMessage(text) {
     text.includes('PUT BIAS')
   );
 }
-
 function isRadarMessage(text) {
   return (
     text.includes('رادار السوق') ||
@@ -485,6 +485,7 @@ function getStrikeFromEntry(entry, side) {
 
   return null;
 }
+
 function getContractDisplay(data) {
   if (!data || !data.symbol || !data.strike || !data.side) {
     return 'غير متوفر';
@@ -525,6 +526,30 @@ function getOptionMid(snap) {
   };
 }
 
+// =====================
+// Target Helpers
+// =====================
+
+function hasTargetHit(trade, stockPrice, tp) {
+  if (!tp || !stockPrice) return false;
+
+  if (trade.side === 'CALL') {
+    return stockPrice >= Number(tp);
+  }
+
+  if (trade.side === 'PUT') {
+    return stockPrice <= Number(tp);
+  }
+
+  return false;
+}
+
+function getBestHitTarget(trade) {
+  if (trade.tp3Hit) return 'TP3';
+  if (trade.tp2Hit) return 'TP2';
+  if (trade.tp1Hit) return 'TP1';
+  return null;
+}
 // =====================
 // API
 // =====================
@@ -780,6 +805,7 @@ function parseRadar(text) {
     time: now()
   };
 }
+
 // =====================
 // Global Match Logic
 // =====================
@@ -863,8 +889,7 @@ function canCreateDecision(gex, radar) {
     gex.stop = buildAutoStop(gex.entry, gex.side);
     gex.autoStop = true;
   }
-
-  if (!gex.stop) {
+    if (!gex.stop) {
     return {
       ok: false,
       reason: 'لا يوجد وقف ولا يمكن حساب وقف تلقائي'
@@ -1049,6 +1074,10 @@ async function createWatchSetup(symbol, gex, radar) {
     tp1: gex.tp1,
     tp2: gex.tp2,
     tp3: gex.tp3,
+    tp1Hit: false,
+    tp2Hit: false,
+    tp3Hit: false,
+
     score: gex.score,
     currentPrice,
     createdAt: now(),
@@ -1073,6 +1102,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
+
 // =====================
 // Messages
 // =====================
@@ -1183,7 +1213,7 @@ async function sendActivatedMessage(setup, price) {
     optionEntry < MIN_CONTRACT_PRICE ||
     optionEntry > MAX_CONTRACT_PRICE
   ) {
-    activeSetups.delete(setup.key);
+        activeSetups.delete(setup.key);
     activeTrades.delete(setup.key);
     sentSetupKeys.delete(setup.key);
     await deleteActiveTradeFromDb(setup.key);
@@ -1223,6 +1253,10 @@ ${setup.optionTicker || 'غير متوفر'}
   setup.lastContractUpdatePrice = optionEntry;
   setup.activatedAt = now();
   setup.status = 'ACTIVE';
+
+  setup.tp1Hit = setup.tp1Hit || false;
+  setup.tp2Hit = setup.tp2Hit || false;
+  setup.tp3Hit = setup.tp3Hit || false;
 
   activeTrades.set(setup.key, setup);
   sentSetupKeys.add(setup.key);
@@ -1281,6 +1315,79 @@ ${reason}`;
   await sendSignalMessage(text);
 }
 
+async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) {
+  const isFinal = targetName === 'TP3';
+
+  const text = isFinal
+    ? `🎯🔥 تحقق الهدف الثالث — ST Decision
+
+📊 السهم: ${trade.symbol}
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+✅ تحقق: ${targetName}
+💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+📈 ربح العقد: +${fmtPrice(optionPrice - trade.optionEntry)}
+
+━━━━━━━━━━━━━━
+🏁 انتهت المتابعة رسميًا
+
+إذا بتستمر:
+ارفع وقفك واحمِ ربحك، وانتبه لعقدك.
+
+😄 الطمع شين… والسوق ما يرحم.
+
+⚠️ ليست توصية شراء أو بيع`
+    : `🎯 تحقق ${targetName} — ST Decision
+
+📊 السهم: ${trade.symbol}
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+📈 ربح العقد: +${fmtPrice(optionPrice - trade.optionEntry)}
+
+✅ الصفقة ماشية بشكل جيد
+📌 تابع وقفك ولا تخلي الربح يتحول خسارة.
+
+⚠️ ليست توصية شراء أو بيع`;
+
+  await sendSignalMessage(text);
+}
+
+async function sendStopMessage(trade, optionPrice) {
+  const bestTarget = getBestHitTarget(trade);
+
+  let title = '🛑 ضرب وقف العقد — ST Decision';
+  let note = '📌 تم إيقاف المتابعة.';
+
+  if (bestTarget) {
+    title = `🟡 خروج بعد تحقيق ${bestTarget} — ST Decision`;
+    note = `✅ الصفقة حققت ${bestTarget} قبل الرجوع للوقف.
+📌 هذا ليس فشل صفقة، هذا خروج بعد ربح/تحرك إيجابي.
+🧠 الأفضل دائمًا رفع الوقف بعد تحقق الأهداف.`;
+  }
+
+  await sendSignalMessage(`${title}
+
+📊 السهم: ${trade.symbol}
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
+
+${note}`);
+}
+
 // =====================
 // Database Active Trades
 // =====================
@@ -1302,6 +1409,14 @@ async function saveActiveTradeToDb(trade) {
         option_entry: trade.optionEntry,
         option_stop: trade.optionStop,
         last_contract_update_price: trade.lastContractUpdatePrice,
+
+        tp1: trade.tp1,
+        tp2: trade.tp2,
+        tp3: trade.tp3,
+        tp1_hit: trade.tp1Hit || false,
+        tp2_hit: trade.tp2Hit || false,
+        tp3_hit: trade.tp3Hit || false,
+
         activated_at: trade.activatedAt
           ? new Date(trade.activatedAt).toISOString()
           : new Date().toISOString(),
@@ -1353,6 +1468,13 @@ async function loadActiveTradesFromDb() {
         optionEntry: Number(row.option_entry),
         optionStop: Number(row.option_stop),
         lastContractUpdatePrice: Number(row.last_contract_update_price),
+
+        tp1: row.tp1 ? Number(row.tp1) : null,
+        tp2: row.tp2 ? Number(row.tp2) : null,
+        tp3: row.tp3 ? Number(row.tp3) : null,
+        tp1Hit: !!row.tp1_hit,
+        tp2Hit: !!row.tp2_hit,
+        tp3Hit: !!row.tp3_hit,
 
         optionBid: null,
         optionAsk: null,
@@ -1441,28 +1563,43 @@ async function monitorActiveTrades() {
       trade.optionDelta = optionData.delta ?? trade.optionDelta;
       trade.optionGamma = optionData.gamma ?? trade.optionGamma;
 
+      const stockPrice = await getFinnhubPrice(trade.symbol);
+
+      if (!trade.tp1Hit && hasTargetHit(trade, stockPrice, trade.tp1)) {
+        trade.tp1Hit = true;
+        await saveActiveTradeToDb(trade);
+        await sendTargetHitMessage(trade, 'TP1', stockPrice, optionPrice);
+      }
+
+      if (!trade.tp2Hit && hasTargetHit(trade, stockPrice, trade.tp2)) {
+        trade.tp2Hit = true;
+        await saveActiveTradeToDb(trade);
+        await sendTargetHitMessage(trade, 'TP2', stockPrice, optionPrice);
+      }
+
+      if (!trade.tp3Hit && hasTargetHit(trade, stockPrice, trade.tp3)) {
+        trade.tp3Hit = true;
+        await sendTargetHitMessage(trade, 'TP3', stockPrice, optionPrice);
+
+        activeTrades.delete(key);
+        sentSetupKeys.delete(trade.key);
+        await deleteActiveTradeFromDb(key);
+        continue;
+      }
+
       if (trade.optionStop && optionPrice <= trade.optionStop) {
         activeTrades.delete(key);
         sentSetupKeys.delete(trade.key);
         await deleteActiveTradeFromDb(key);
 
-        await sendSignalMessage(`🛑 ضرب وقف العقد — ST Decision
-
-📊 السهم: ${trade.symbol}
-🎯 العقد:
-${getContractDisplay(trade)}
-${trade.optionTicker}
-
-💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
-🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
-
-📌 تم إيقاف المتابعة.`);
-
+        await sendStopMessage(trade, optionPrice);
         continue;
       }
 
-      const lastUpdate = trade.lastContractUpdatePrice || trade.optionEntry || optionPrice;
+      const lastUpdate =
+        trade.lastContractUpdatePrice ||
+        trade.optionEntry ||
+        optionPrice;
 
       if (optionPrice >= lastUpdate + CONTRACT_UPDATE_STEP) {
         trade.lastContractUpdatePrice = optionPrice;
@@ -1479,6 +1616,11 @@ ${trade.optionTicker}
 💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
 💵 السعر الحالي: ${fmtPrice(optionPrice)}
 ✅ الربح الحالي: +${fmtPrice(optionPrice - trade.optionEntry)}
+
+🎯 حالة الأهداف:
+TP1: ${trade.tp1Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
+TP2: ${trade.tp2Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
+TP3: ${trade.tp3Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
 
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 📦 OI: ${fmtNum(trade.optionOi)}
@@ -1524,8 +1666,13 @@ bot.on('message', async (msg) => {
     }
 
     if (text === '/status' || text === '/botstatus') {
-      const gexList = recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
-      const radarList = recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
+      const gexList =
+        recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') ||
+        'لا يوجد';
+
+      const radarList =
+        recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') ||
+        'لا يوجد';
 
       return bot.sendMessage(
         msg.chat.id,
@@ -1569,6 +1716,11 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 
 حفظ الصفقات:
 الصفقات المفعلة تحفظ في Supabase وتعود بعد Restart أو Deploy.
+
+متابعة الأهداف:
+البوت يراقب TP1 و TP2 و TP3 على سعر السهم.
+إذا تحقق TP3 تنتهي المتابعة تلقائيًا.
+إذا تحقق هدف ثم رجع العقد للوقف تظهر الرسالة كخروج بعد هدف، وليس كفشل مباشر.
 
 طريقة القرار:
 يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
