@@ -44,6 +44,8 @@ const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 5);
 
 const MAX_ENTRY_DISTANCE_PCT = Number(process.env.MAX_ENTRY_DISTANCE_PCT || 5);
 
+const CONTRACT_QTY = Number(process.env.CONTRACT_QTY || 1);
+
 const recentGexMessages = [];
 const recentRadarMessages = [];
 
@@ -217,6 +219,36 @@ function tradingTimeText() {
     : 'الشتاء: 5:30 م إلى 12:00 ص بتوقيت السعودية';
 }
 
+function getIsoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = d.getUTCDay() || 7;
+
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+
+  return String(weekNo).padStart(2, '0');
+}
+
+function getWeekKey() {
+  const d = new Date();
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(d);
+
+  const obj = {};
+  for (const p of parts) {
+    obj[p.type] = p.value;
+  }
+
+  return `${obj.year}-W${getIsoWeekNumber(d)}`;
+}
+
 function fmtPrice(n) {
   if (n === null || n === undefined || isNaN(Number(n))) return 'غير متوفر';
   return Number(n).toFixed(2);
@@ -244,6 +276,7 @@ function pushGlobalHistory(arr, item, limit = HISTORY_LIMIT) {
     arr.length = limit;
   }
 }
+
 function isFresh(item) {
   return item && now() - item.time <= MATCH_WINDOW_MS;
 }
@@ -403,7 +436,6 @@ function extractCurrentPriceFromText(text) {
 
   return null;
 }
-
 function isReadyText(text) {
   return (
     text.includes('جاهزة') ||
@@ -462,6 +494,7 @@ function extractDominantExpiration(text) {
   if (!matches.length) return null;
   return matches[0][1];
 }
+
 function getStrikeStep(price) {
   if (price >= 1000) return 10;
   if (price >= 500) return 5;
@@ -699,6 +732,7 @@ async function getMassiveOptionChain(symbol, expiration, side) {
 
   return all;
 }
+
 // =====================
 // Option Selection
 // =====================
@@ -795,7 +829,6 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
 
   return normalized[0];
 }
-
 // =====================
 // Parsers
 // =====================
@@ -992,6 +1025,7 @@ function canCreateDecision(gex, radar) {
     reason: 'توافق كامل'
   };
 }
+
 async function notifyAdminReject(symbol, reason) {
   if (!ADMIN_CHAT_ID) return;
 
@@ -1140,6 +1174,7 @@ async function createWatchSetup(symbol, gex, radar) {
     optionTicker: optionData.optionTicker,
 
     optionEntry: optionData.mid,
+    optionHigh: optionData.mid,
     optionBid: optionData.bid,
     optionAsk: optionData.ask,
     optionLast: optionData.last,
@@ -1321,6 +1356,7 @@ ${setup.optionTicker || 'غير متوفر'}
   const optionStop = Math.max(optionEntry - CONTRACT_STOP_DROP, 0.01);
 
   setup.optionEntry = optionEntry;
+  setup.optionHigh = optionEntry;
   setup.optionStop = optionStop;
   setup.optionBid = optionData?.bid || setup.optionBid;
   setup.optionAsk = optionData?.ask || setup.optionAsk;
@@ -1343,6 +1379,7 @@ ${setup.optionTicker || 'غير متوفر'}
   sentSetupKeys.add(setup.key);
 
   await saveActiveTradeToDb(setup);
+  await saveTradeHistoryOpen(setup);
 
   const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
 
@@ -1482,6 +1519,7 @@ async function loadActiveTradesFromDb() {
 
         optionTicker: row.option_ticker,
         optionEntry: Number(row.option_entry),
+        optionHigh: Number(row.option_entry),
         optionStop: Number(row.option_stop),
         lastContractUpdatePrice: Number(row.last_contract_update_price),
 
@@ -1515,6 +1553,222 @@ async function loadActiveTradesFromDb() {
   }
 }
 
+// =====================
+// Database Trade History
+// =====================
+
+async function saveTradeHistoryOpen(trade) {
+  const entry = Number(trade.optionEntry || 0);
+  const high = Number(trade.optionHigh || trade.optionEntry || 0);
+
+  const maxProfitAmount = entry && high
+    ? (high - entry) * 100 * CONTRACT_QTY
+    : 0;
+
+  const maxProfitPct = entry && high
+    ? ((high - entry) / entry) * 100
+    : 0;
+
+  try {
+    const { error } = await decisionSupabase
+      .from('decision_trade_history')
+      .upsert({
+        id: trade.key,
+        week_key: getWeekKey(),
+        symbol: trade.symbol,
+        side: trade.side,
+        status: 'ACTIVE',
+
+        entry: trade.entry,
+        stop: trade.stop,
+        strike: trade.strike,
+        expiration: trade.expiration,
+        option_ticker: trade.optionTicker,
+
+        option_entry: trade.optionEntry,
+        option_exit: null,
+        option_high: high,
+        option_stop: trade.optionStop,
+
+        profit_amount: maxProfitAmount,
+        profit_pct: maxProfitPct,
+        max_profit_amount: maxProfitAmount,
+        max_profit_pct: maxProfitPct,
+        is_win: false,
+
+        tp1: trade.tp1 || null,
+        tp2: trade.tp2 || null,
+        tp3: trade.tp3 || null,
+        tp1_hit: !!trade.tp1Hit,
+        tp2_hit: !!trade.tp2Hit,
+        tp3_hit: !!trade.tp3Hit,
+        sl_hit: !!trade.slHit,
+
+        activated_at: trade.activatedAt
+          ? new Date(trade.activatedAt).toISOString()
+          : new Date().toISOString()
+      });
+
+    if (error) console.error('SAVE TRADE HISTORY OPEN ERROR:', error.message);
+  } catch (err) {
+    console.error('SAVE TRADE HISTORY OPEN ERROR:', err.message);
+  }
+}
+
+async function updateTradeHigh(trade) {
+  const entry = Number(trade.optionEntry || 0);
+  const high = Number(trade.optionHigh || trade.optionEntry || 0);
+
+  const maxProfitAmount = entry && high
+    ? (high - entry) * 100 * CONTRACT_QTY
+    : 0;
+
+  const maxProfitPct = entry && high
+    ? ((high - entry) / entry) * 100
+    : 0;
+
+  try {
+    const { error } = await decisionSupabase
+      .from('decision_trade_history')
+      .update({
+        option_high: high,
+        profit_amount: maxProfitAmount,
+        profit_pct: maxProfitPct,
+        max_profit_amount: maxProfitAmount,
+        max_profit_pct: maxProfitPct,
+        tp1_hit: !!trade.tp1Hit,
+        tp2_hit: !!trade.tp2Hit,
+        tp3_hit: !!trade.tp3Hit,
+        sl_hit: !!trade.slHit
+      })
+      .eq('id', trade.key);
+
+    if (error) console.error('UPDATE TRADE HIGH ERROR:', error.message);
+  } catch (err) {
+    console.error('UPDATE TRADE HIGH ERROR:', err.message);
+  }
+}
+
+async function closeTradeHistory(trade, closeReason, optionExit) {
+  const entry = Number(trade.optionEntry || 0);
+  const exit = Number(optionExit || 0);
+  const high = Number(trade.optionHigh || optionExit || trade.optionEntry || 0);
+
+  const maxProfitAmount = entry && high
+    ? (high - entry) * 100 * CONTRACT_QTY
+    : 0;
+
+  const maxProfitPct = entry && high
+    ? ((high - entry) / entry) * 100
+    : 0;
+
+  const isWin =
+    closeReason === 'TP3' ||
+    trade.tp1Hit ||
+    trade.tp2Hit ||
+    trade.tp3Hit ||
+    maxProfitAmount > 0;
+
+  try {
+    const { error } = await decisionSupabase
+      .from('decision_trade_history')
+      .upsert({
+        id: trade.key,
+        week_key: getWeekKey(),
+        symbol: trade.symbol,
+        side: trade.side,
+        status: 'CLOSED',
+        close_reason: closeReason,
+
+        entry: trade.entry,
+        stop: trade.stop,
+        strike: trade.strike,
+        expiration: trade.expiration,
+        option_ticker: trade.optionTicker,
+
+        option_entry: trade.optionEntry,
+        option_exit: exit,
+        option_high: high,
+        option_stop: trade.optionStop,
+
+        profit_amount: maxProfitAmount,
+        profit_pct: maxProfitPct,
+        max_profit_amount: maxProfitAmount,
+        max_profit_pct: maxProfitPct,
+        is_win: isWin,
+
+        tp1: trade.tp1 || null,
+        tp2: trade.tp2 || null,
+        tp3: trade.tp3 || null,
+        tp1_hit: !!trade.tp1Hit,
+        tp2_hit: !!trade.tp2Hit,
+        tp3_hit: !!trade.tp3Hit,
+        sl_hit: !!trade.slHit,
+
+        activated_at: trade.activatedAt
+          ? new Date(trade.activatedAt).toISOString()
+          : new Date().toISOString(),
+        closed_at: new Date().toISOString()
+      });
+
+    if (error) console.error('CLOSE TRADE HISTORY ERROR:', error.message);
+  } catch (err) {
+    console.error('CLOSE TRADE HISTORY ERROR:', err.message);
+  }
+
+  await rebuildWeeklyStats(getWeekKey());
+}
+
+async function rebuildWeeklyStats(weekKey) {
+  try {
+    const { data, error } = await decisionSupabase
+      .from('decision_trade_history')
+      .select('*')
+      .eq('week_key', weekKey)
+      .eq('status', 'CLOSED');
+
+    if (error) {
+      console.error('LOAD WEEKLY HISTORY ERROR:', error.message);
+      return;
+    }
+
+    const rows = data || [];
+    const total = rows.length;
+    const wins = rows.filter(x => x.is_win).length;
+    const losses = rows.filter(x => !x.is_win).length;
+
+    const totalProfit = rows.reduce(
+      (sum, x) => sum + Number(x.max_profit_amount || x.profit_amount || 0),
+      0
+    );
+
+    const avgProfitPct = total
+      ? rows.reduce(
+          (sum, x) => sum + Number(x.max_profit_pct || x.profit_pct || 0),
+          0
+        ) / total
+      : 0;
+
+    const winRate = total ? (wins / total) * 100 : 0;
+
+    const { error: upsertError } = await decisionSupabase
+      .from('decision_weekly_stats')
+      .upsert({
+        week_key: weekKey,
+        total_trades: total,
+        winning_trades: wins,
+        losing_trades: losses,
+        win_rate: winRate,
+        total_profit_amount: totalProfit,
+        avg_profit_pct: avgProfitPct,
+        updated_at: new Date().toISOString()
+      });
+
+    if (upsertError) console.error('SAVE WEEKLY STATS ERROR:', upsertError.message);
+  } catch (err) {
+    console.error('REBUILD WEEKLY STATS ERROR:', err.message);
+  }
+}
 // =====================
 // Monitors
 // =====================
@@ -1573,6 +1827,11 @@ async function monitorActiveTrades() {
       const optionPrice = optionData.mid;
       if (!optionPrice) continue;
 
+      trade.optionHigh = Math.max(
+        Number(trade.optionHigh || trade.optionEntry || 0),
+        Number(optionPrice || 0)
+      );
+
       trade.optionBid = optionData.bid || trade.optionBid;
       trade.optionAsk = optionData.ask || trade.optionAsk;
       trade.optionLast = optionData.last || trade.optionLast;
@@ -1581,18 +1840,22 @@ async function monitorActiveTrades() {
       trade.optionDelta = optionData.delta ?? trade.optionDelta;
       trade.optionGamma = optionData.gamma ?? trade.optionGamma;
 
+      await updateTradeHigh(trade);
+
       const stockPrice = await getFinnhubPrice(trade.symbol);
 
       if (!trade.tp1Hit && hasTargetHit(trade, stockPrice, trade.tp1)) {
         trade.tp1Hit = true;
         await sendTargetHitMessage(trade, 'TP1', stockPrice, optionPrice);
         await saveActiveTradeToDb(trade);
+        await updateTradeHigh(trade);
       }
 
       if (!trade.tp2Hit && hasTargetHit(trade, stockPrice, trade.tp2)) {
         trade.tp2Hit = true;
         await sendTargetHitMessage(trade, 'TP2', stockPrice, optionPrice);
         await saveActiveTradeToDb(trade);
+        await updateTradeHigh(trade);
       }
 
       if (!trade.tp3Hit && hasTargetHit(trade, stockPrice, trade.tp3)) {
@@ -1608,6 +1871,8 @@ async function monitorActiveTrades() {
           tp3_hit: true,
           sl_hit: false
         });
+
+        await closeTradeHistory(trade, 'TP3', optionPrice);
 
         continue;
       }
@@ -1625,6 +1890,7 @@ async function monitorActiveTrades() {
           sl_hit: true
         });
 
+        await closeTradeHistory(trade, 'SL', optionPrice);
         await sendBetterStopMessage(trade, optionPrice);
 
         continue;
@@ -1636,6 +1902,7 @@ async function monitorActiveTrades() {
         trade.lastContractUpdatePrice = optionPrice;
 
         await saveActiveTradeToDb(trade);
+        await updateTradeHigh(trade);
 
         await sendSignalMessage(`📈 تحديث العقد — ST Decision
 
@@ -1646,7 +1913,9 @@ ${trade.optionTicker}
 
 💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
 💵 السعر الحالي: ${fmtPrice(optionPrice)}
+📈 أعلى سعر وصله العقد: ${fmtPrice(trade.optionHigh)}
 ✅ الربح الحالي: +${fmtPrice(optionPrice - trade.optionEntry)}
+🔥 أعلى ربح وصل له العقد: +${fmtPrice(trade.optionHigh - trade.optionEntry)}
 
 🎯 حالة الأهداف:
 TP1: ${trade.tp1Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
@@ -1750,6 +2019,8 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 
 حفظ الصفقات:
 الصفقات المفعلة تحفظ في Supabase وتعود بعد Restart أو Deploy.
+والصفقات تحفظ في decision_trade_history مع أعلى سعر وصله العقد.
+والإحصائيات الأسبوعية تحفظ في decision_weekly_stats.
 
 متابعة الأهداف:
 البوت يراقب TP1 و TP2 و TP3 على سعر السهم.
@@ -1806,5 +2077,3 @@ loadActiveTradesFromDb();
 setInterval(monitorSetups, PRICE_CHECK_MS);
 setInterval(monitorActiveTrades, PRICE_CHECK_MS);
 setInterval(processDecisionMessages, 15 * 1000);
-
-sendSignalMessage('✅ اختبار قناة بوت القرار').catch(console.error);
