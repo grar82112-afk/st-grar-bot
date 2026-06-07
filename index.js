@@ -1452,6 +1452,7 @@ async function saveActiveTradeToDb(trade) {
         expiration: trade.expiration,
         option_ticker: trade.optionTicker,
         option_entry: trade.optionEntry,
+        option_high: trade.optionHigh,
         option_stop: trade.optionStop,
         last_contract_update_price: trade.lastContractUpdatePrice,
 
@@ -1519,7 +1520,7 @@ async function loadActiveTradesFromDb() {
 
         optionTicker: row.option_ticker,
         optionEntry: Number(row.option_entry),
-        optionHigh: Number(row.option_entry),
+        optionHigh: Number(row.option_high || row.option_entry),
         optionStop: Number(row.option_stop),
         lastContractUpdatePrice: Number(row.last_contract_update_price),
 
