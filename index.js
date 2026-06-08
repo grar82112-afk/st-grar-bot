@@ -331,7 +331,6 @@ function extractScore(text) {
 
   return m ? Number(m[1]) : 0;
 }
-
 function extractBiasFromGex(text) {
   if (text.includes('CALL BIAS')) return 'CALL';
   if (text.includes('PUT BIAS')) return 'PUT';
@@ -436,6 +435,7 @@ function extractCurrentPriceFromText(text) {
 
   return null;
 }
+
 function isReadyText(text) {
   return (
     text.includes('جاهزة') ||
@@ -559,7 +559,7 @@ function getOptionMid(snap) {
 }
 
 // =====================
-// Target Tracking Helpers - Added Only
+// Target Tracking Helpers
 // =====================
 
 function hasTargetHit(trade, stockPrice, tp) {
@@ -629,23 +629,38 @@ ${trade.optionTicker}
 }
 
 async function sendBetterStopMessage(trade, optionPrice) {
-  const bestTarget = getBestHitTarget(trade);
+  const entry = Number(trade.optionEntry || 0);
+  const high = Number(trade.optionHigh || entry || 0);
+  const current = Number(optionPrice || 0);
 
-  if (bestTarget) {
-    await sendSignalMessage(`🟡 خروج بعد تحقيق ${bestTarget} — ST Decision
+  const maxProfitAmount = entry && high
+    ? (high - entry) * 100 * CONTRACT_QTY
+    : 0;
+
+  const maxProfitPct = entry && high
+    ? ((high - entry) / entry) * 100
+    : 0;
+
+  if (high > entry) {
+    await sendSignalMessage(`🟡 تنبيه للمستمرين — ST Decision
 
 📊 السهم: ${trade.symbol}
 🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(entry)}
+📈 أعلى سعر وصل له العقد: ${fmtPrice(high)}
+🔥 أعلى ربح تحقق: +$${fmtPrice(maxProfitAmount)}
+📊 أعلى نسبة ربح: +${fmtPrice(maxProfitPct)}%
+
+💵 سعر العقد الحالي: ${fmtPrice(current)}
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-✅ الصفقة حققت ${bestTarget} قبل الرجوع للوقف.
-📌 هذا خروج بعد ربح/تحرك إيجابي، وليس فشل صفقة.
-🧠 الأفضل رفع الوقف بعد تحقق الأهداف.`);
+📌 العقد عاد الآن تحت الوقف وتم إيقاف المتابعة.
+✅ الصفقة حققت ربح قبل الرجوع، وليست صفقة فاشلة.
+
+⚠️ ليست توصية شراء أو بيع`);
     return;
   }
 
@@ -656,8 +671,8 @@ ${trade.optionTicker}
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(entry)}
+💵 سعر العقد الحالي: ${fmtPrice(current)}
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
 📌 تم إيقاف المتابعة.`);
@@ -702,7 +717,6 @@ async function getMassiveOptionSnapshot(symbol, optionTicker) {
 
   return result;
 }
-
 async function getMassiveOptionChain(symbol, expiration, side) {
   if (!MASSIVE_API_KEY) {
     throw new Error('Missing MASSIVE_API_KEY');
@@ -829,6 +843,7 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
 
   return normalized[0];
 }
+
 // =====================
 // Parsers
 // =====================
@@ -1104,8 +1119,7 @@ async function createWatchSetup(symbol, gex, radar) {
     await notifyAdminReject(symbol, reason);
     return;
   }
-
-  const distancePct = Math.abs(currentPrice - gex.entry) / currentPrice * 100;
+    const distancePct = Math.abs(currentPrice - gex.entry) / currentPrice * 100;
 
   if (distancePct > MAX_ENTRY_DISTANCE_PCT) {
     const reason =
@@ -1292,6 +1306,7 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
   await sendSignalMessage(text);
 }
+
 async function sendActivatedMessage(setup, price) {
   if (!isDecisionTradingTime()) {
     console.log(`ACTIVATION OUTSIDE TRADING TIME - BLOCKED: ${setup.symbol}`);
@@ -1473,7 +1488,6 @@ async function saveActiveTradeToDb(trade) {
     console.error('SAVE ACTIVE TRADE DB ERROR:', err.message);
   }
 }
-
 async function closeActiveTradeInDb(id, reason, extra = {}) {
   try {
     await decisionSupabase
@@ -1770,6 +1784,7 @@ async function rebuildWeeklyStats(weekKey) {
     console.error('REBUILD WEEKLY STATS ERROR:', err.message);
   }
 }
+
 // =====================
 // Monitors
 // =====================
@@ -1888,7 +1903,8 @@ async function monitorActiveTrades() {
           tp1_hit: !!trade.tp1Hit,
           tp2_hit: !!trade.tp2Hit,
           tp3_hit: !!trade.tp3Hit,
-          sl_hit: true
+          sl_hit: true,
+          option_high: trade.optionHigh
         });
 
         await closeTradeHistory(trade, 'SL', optionPrice);
@@ -2026,7 +2042,7 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 متابعة الأهداف:
 البوت يراقب TP1 و TP2 و TP3 على سعر السهم.
 إذا تحقق TP3 تنتهي المتابعة تلقائيًا.
-إذا تحقق هدف ثم رجع العقد للوقف تظهر الرسالة كخروج بعد هدف.
+إذا حقق العقد ربح ثم رجع تحت وقف العقد تظهر الرسالة كتنبيه للمستمرين مع أعلى ربح تحقق.
 
 طريقة القرار:
 يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
