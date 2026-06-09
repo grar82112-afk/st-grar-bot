@@ -941,6 +941,12 @@ function buildSetupKey(symbol, side) {
   return `${symbol}:${side}`;
 }
 
+function buildTradeUid(trade) {
+  const activatedAt = trade.activatedAt || now();
+  const optionTicker = trade.optionTicker || 'NO_OPTION';
+  return `${trade.symbol}:${trade.side}:${optionTicker}:${activatedAt}`;
+}
+
 function findMatchingPairs() {
   const pairs = [];
 
@@ -1119,7 +1125,8 @@ async function createWatchSetup(symbol, gex, radar) {
     await notifyAdminReject(symbol, reason);
     return;
   }
-    const distancePct = Math.abs(currentPrice - gex.entry) / currentPrice * 100;
+
+  const distancePct = Math.abs(currentPrice - gex.entry) / currentPrice * 100;
 
   if (distancePct > MAX_ENTRY_DISTANCE_PCT) {
     const reason =
@@ -1174,6 +1181,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   const setup = {
     key: setupKey,
+    tradeUid: null,
     symbol,
     side: gex.side,
     entry: gex.entry,
@@ -1231,7 +1239,6 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
-
 // =====================
 // Messages
 // =====================
@@ -1383,6 +1390,7 @@ ${setup.optionTicker || 'غير متوفر'}
 
   setup.lastContractUpdatePrice = optionEntry;
   setup.activatedAt = now();
+  setup.tradeUid = buildTradeUid(setup);
   setup.status = 'ACTIVE';
 
   setup.tp1Hit = setup.tp1Hit || false;
@@ -1488,6 +1496,7 @@ async function saveActiveTradeToDb(trade) {
     console.error('SAVE ACTIVE TRADE DB ERROR:', err.message);
   }
 }
+
 async function closeActiveTradeInDb(id, reason, extra = {}) {
   try {
     await decisionSupabase
@@ -1558,6 +1567,8 @@ async function loadActiveTradesFromDb() {
         createdAt: row.created_at ? new Date(row.created_at).getTime() : now()
       };
 
+      trade.tradeUid = buildTradeUid(trade);
+
       activeTrades.set(trade.key, trade);
       sentSetupKeys.add(trade.key);
     }
@@ -1567,12 +1578,15 @@ async function loadActiveTradesFromDb() {
     console.error('LOAD ACTIVE TRADES DB ERROR:', err.message);
   }
 }
-
 // =====================
 // Database Trade History
 // =====================
 
 async function saveTradeHistoryOpen(trade) {
+  if (!trade.tradeUid) {
+    trade.tradeUid = buildTradeUid(trade);
+  }
+
   const entry = Number(trade.optionEntry || 0);
   const high = Number(trade.optionHigh || trade.optionEntry || 0);
 
@@ -1587,8 +1601,9 @@ async function saveTradeHistoryOpen(trade) {
   try {
     const { error } = await decisionSupabase
       .from('decision_trade_history')
-      .upsert({
-        id: trade.key,
+      .insert({
+        id: trade.tradeUid,
+        trade_uid: trade.tradeUid,
         week_key: getWeekKey(),
         symbol: trade.symbol,
         side: trade.side,
@@ -1631,6 +1646,10 @@ async function saveTradeHistoryOpen(trade) {
 }
 
 async function updateTradeHigh(trade) {
+  if (!trade.tradeUid) {
+    trade.tradeUid = buildTradeUid(trade);
+  }
+
   const entry = Number(trade.optionEntry || 0);
   const high = Number(trade.optionHigh || trade.optionEntry || 0);
 
@@ -1656,7 +1675,7 @@ async function updateTradeHigh(trade) {
         tp3_hit: !!trade.tp3Hit,
         sl_hit: !!trade.slHit
       })
-      .eq('id', trade.key);
+      .eq('trade_uid', trade.tradeUid);
 
     if (error) console.error('UPDATE TRADE HIGH ERROR:', error.message);
   } catch (err) {
@@ -1665,6 +1684,10 @@ async function updateTradeHigh(trade) {
 }
 
 async function closeTradeHistory(trade, closeReason, optionExit) {
+  if (!trade.tradeUid) {
+    trade.tradeUid = buildTradeUid(trade);
+  }
+
   const entry = Number(trade.optionEntry || 0);
   const exit = Number(optionExit || 0);
   const high = Number(trade.optionHigh || optionExit || trade.optionEntry || 0);
@@ -1682,16 +1705,12 @@ async function closeTradeHistory(trade, closeReason, optionExit) {
     trade.tp1Hit ||
     trade.tp2Hit ||
     trade.tp3Hit ||
-    maxProfitAmount > 0;
+    maxProfitAmount >= 20;
 
   try {
     const { error } = await decisionSupabase
       .from('decision_trade_history')
-      .upsert({
-        id: trade.key,
-        week_key: getWeekKey(),
-        symbol: trade.symbol,
-        side: trade.side,
+      .update({
         status: 'CLOSED',
         close_reason: closeReason,
 
@@ -1720,11 +1739,9 @@ async function closeTradeHistory(trade, closeReason, optionExit) {
         tp3_hit: !!trade.tp3Hit,
         sl_hit: !!trade.slHit,
 
-        activated_at: trade.activatedAt
-          ? new Date(trade.activatedAt).toISOString()
-          : new Date().toISOString(),
         closed_at: new Date().toISOString()
-      });
+      })
+      .eq('trade_uid', trade.tradeUid);
 
     if (error) console.error('CLOSE TRADE HISTORY ERROR:', error.message);
   } catch (err) {
@@ -2036,7 +2053,7 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 
 حفظ الصفقات:
 الصفقات المفعلة تحفظ في Supabase وتعود بعد Restart أو Deploy.
-والصفقات تحفظ في decision_trade_history مع أعلى سعر وصله العقد.
+والصفقات تحفظ في decision_trade_history مع trade_uid فريد لكل صفقة حتى لا يتم استبدال العقود المتكررة.
 والإحصائيات الأسبوعية تحفظ في decision_weekly_stats.
 
 متابعة الأهداف:
