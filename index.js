@@ -708,7 +708,7 @@ async function getMassiveOptionSnapshot(symbol, optionTicker) {
   const url =
     `${MASSIVE_BASE_URL}/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(optionTicker)}?apiKey=${MASSIVE_API_KEY}`;
 
-  const res = await axios.get(url, { timeout: 15000 });
+  const res = await axios.get(url, { timeout: 30000 });
   const result = res.data?.results;
 
   if (!result) {
@@ -734,7 +734,7 @@ async function getMassiveOptionChain(symbol, expiration, side) {
   const all = [];
 
   while (url) {
-    const res = await axios.get(url, { timeout: 20000 });
+    const res = await axios.get(url, { timeout: 30000 });
     const results = Array.isArray(res.data?.results) ? res.data.results : [];
 
     all.push(...results);
