@@ -715,7 +715,7 @@ async function getMassiveOptionSnapshot(symbol, optionTicker) {
   const url =
     `${MASSIVE_BASE_URL}/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(optionTicker)}?apiKey=${MASSIVE_API_KEY}`;
 
-  const res = await axios.get(url, { timeout: 18000 });
+  const res = await axios.get(url, { timeout:30000 });
   const result = res.data?.results;
 
   if (!result) {
