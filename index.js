@@ -141,12 +141,6 @@ function now() {
   return Date.now();
 }
 
-// =====================
-// Market Time Filter - Saudi Time
-// Summer: 4:30 PM - 11:00 PM KSA
-// Winter: 5:30 PM - 12:00 AM KSA
-// =====================
-
 function getSaudiTimeParts() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Riyadh',
@@ -315,7 +309,6 @@ function isRadarMessage(text) {
     text.includes('اتجاه تدفق العقود')
   );
 }
-
 function extractNumberAfter(label, text) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`${escaped}\\s*:?\\s*\\$?([0-9]+(?:\\.[0-9]+)?)`, 'i');
@@ -331,6 +324,7 @@ function extractScore(text) {
 
   return m ? Number(m[1]) : 0;
 }
+
 function extractBiasFromGex(text) {
   if (text.includes('CALL BIAS')) return 'CALL';
   if (text.includes('PUT BIAS')) return 'PUT';
@@ -558,10 +552,6 @@ function getOptionMid(snap) {
   };
 }
 
-// =====================
-// Target Tracking Helpers
-// =====================
-
 function hasTargetHit(trade, stockPrice, tp) {
   if (!tp || !stockPrice) return false;
 
@@ -586,6 +576,29 @@ function getBestHitTarget(trade) {
 async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) {
   const isFinal = targetName === 'TP3';
 
+  const entry = Number(trade.optionEntry || 0);
+  const current = Number(optionPrice || 0);
+  const high = Number(trade.optionHigh || trade.optionEntry || 0);
+
+  const profit = current - entry;
+  const maxProfit = high - entry;
+
+  const profitText = profit >= 0
+    ? `+${fmtPrice(profit)}`
+    : `-${fmtPrice(Math.abs(profit))}`;
+
+  const maxProfitText = maxProfit >= 0
+    ? `+${fmtPrice(maxProfit)}`
+    : `-${fmtPrice(Math.abs(maxProfit))}`;
+
+  const profitIcon = profit >= 0 ? '📈' : '📉';
+
+  const targetNote = profit > 0
+    ? `📌 تحقق هدف السهم والعقد حالياً فوق الدخول.
+تابع وقفك ولا تخلي الربح يتحول خسارة.`
+    : `⚠️ تحقق هدف السهم، لكن العقد حالياً أقل من سعر الدخول.
+لا تعتبرها ربح حتى يتحول العقد فوق الدخول.`;
+
   const text = isFinal
     ? `🎯🔥 تحقق الهدف الثالث — ST Decision
 
@@ -598,18 +611,16 @@ ${trade.optionTicker}
 💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
 💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
 💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-📈 الربح الحالي: +${fmtPrice(optionPrice - trade.optionEntry)}
+${profitIcon} نتيجة العقد الحالية: ${profitText}
+🔥 أعلى ربح وصل له العقد: ${maxProfitText}
 
 ━━━━━━━━━━━━━━
 🏁 انتهت المتابعة رسميًا
 
-إذا بتستمر:
-ارفع وقفك واحمِ ربحك، وانتبه لعقدك.
-
-😄 الطمع شين.
+${targetNote}
 
 ⚠️ ليست توصية شراء أو بيع`
-    : `🎯 تحقق ${targetName} — ST Decision
+    : `🎯 تحقق هدف السهم ${targetName} — ST Decision
 
 📊 السهم: ${trade.symbol}
 🎯 العقد:
@@ -619,9 +630,10 @@ ${trade.optionTicker}
 💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
 💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
 💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-📈 الربح الحالي: +${fmtPrice(optionPrice - trade.optionEntry)}
+${profitIcon} نتيجة العقد الحالية: ${profitText}
+🔥 أعلى ربح وصل له العقد: ${maxProfitText}
 
-📌 تابع وقفك ولا تخلي الربح يتحول خسارة.
+${targetNote}
 
 ⚠️ ليست توصية شراء أو بيع`;
 
@@ -677,11 +689,6 @@ ${trade.optionTicker}
 
 📌 تم إيقاف المتابعة.`);
 }
-
-// =====================
-// API
-// =====================
-
 async function getFinnhubPrice(symbol) {
   if (!FINNHUB_API_KEY) {
     throw new Error('Missing FINNHUB_API_KEY');
@@ -717,6 +724,7 @@ async function getMassiveOptionSnapshot(symbol, optionTicker) {
 
   return result;
 }
+
 async function getMassiveOptionChain(symbol, expiration, side) {
   if (!MASSIVE_API_KEY) {
     throw new Error('Missing MASSIVE_API_KEY');
@@ -746,10 +754,6 @@ async function getMassiveOptionChain(symbol, expiration, side) {
 
   return all;
 }
-
-// =====================
-// Option Selection
-// =====================
 
 function normalizeChainContract(item) {
   const details = item?.details || {};
@@ -844,10 +848,6 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
   return normalized[0];
 }
 
-// =====================
-// Parsers
-// =====================
-
 function parseGex(text) {
   const symbol = getSymbolFromText(text);
   if (!symbol) return null;
@@ -932,10 +932,6 @@ function parseRadar(text) {
     time: now()
   };
 }
-
-// =====================
-// Global Match Logic
-// =====================
 
 function buildSetupKey(symbol, side) {
   return `${symbol}:${side}`;
@@ -1046,7 +1042,6 @@ function canCreateDecision(gex, radar) {
     reason: 'توافق كامل'
   };
 }
-
 async function notifyAdminReject(symbol, reason) {
   if (!ADMIN_CHAT_ID) return;
 
@@ -1239,9 +1234,6 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
-// =====================
-// Messages
-// =====================
 
 async function sendWatchMessage(setup, gex, radar) {
   const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
@@ -1455,11 +1447,6 @@ ${reason}`;
 
   await sendSignalMessage(text);
 }
-
-// =====================
-// Database Active Trades
-// =====================
-
 async function saveActiveTradeToDb(trade) {
   try {
     await decisionSupabase
@@ -1578,9 +1565,6 @@ async function loadActiveTradesFromDb() {
     console.error('LOAD ACTIVE TRADES DB ERROR:', err.message);
   }
 }
-// =====================
-// Database Trade History
-// =====================
 
 async function saveTradeHistoryOpen(trade) {
   if (!trade.tradeUid) {
@@ -1802,10 +1786,6 @@ async function rebuildWeeklyStats(weekKey) {
   }
 }
 
-// =====================
-// Monitors
-// =====================
-
 async function monitorSetups() {
   for (const [key, setup] of activeSetups.entries()) {
     try {
@@ -1965,10 +1945,6 @@ TP3: ${trade.tp3Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
     }
   }
 }
-
-// =====================
-// Telegram Handlers
-// =====================
 
 bot.on('message', async (msg) => {
   try {
