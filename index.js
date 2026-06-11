@@ -697,7 +697,7 @@ async function getFinnhubPrice(symbol) {
   const url =
     `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_API_KEY}`;
 
-  const res = await axios.get(url, { timeout: 15000 });
+  const res = await axios.get(url, { timeout: 18000 });
   const price = Number(res.data?.c || 0);
 
   if (!price) {
@@ -715,7 +715,7 @@ async function getMassiveOptionSnapshot(symbol, optionTicker) {
   const url =
     `${MASSIVE_BASE_URL}/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(optionTicker)}?apiKey=${MASSIVE_API_KEY}`;
 
-  const res = await axios.get(url, { timeout: 15000 });
+  const res = await axios.get(url, { timeout: 18000 });
   const result = res.data?.results;
 
   if (!result) {
