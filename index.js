@@ -45,6 +45,7 @@ const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 5);
 const MAX_ENTRY_DISTANCE_PCT = Number(process.env.MAX_ENTRY_DISTANCE_PCT || 5);
 
 const CONTRACT_QTY = Number(process.env.CONTRACT_QTY || 1);
+const TP3_PROTECT_PROFIT_AMOUNT = Number(process.env.TP3_PROTECT_PROFIT_AMOUNT || 20);
 
 const recentGexMessages = [];
 const recentRadarMessages = [];
@@ -309,6 +310,7 @@ function isRadarMessage(text) {
     text.includes('اتجاه تدفق العقود')
   );
 }
+
 function extractNumberAfter(label, text) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`${escaped}\\s*:?\\s*\\$?([0-9]+(?:\\.[0-9]+)?)`, 'i');
@@ -381,7 +383,6 @@ function extractRadarSide(text) {
 
   return 'NEUTRAL';
 }
-
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
@@ -573,6 +574,26 @@ function getBestHitTarget(trade) {
   return null;
 }
 
+function getProtectPriceAfterTp3(trade) {
+  const entry = Number(trade.optionEntry || 0);
+  if (!entry) return null;
+
+  return entry + (TP3_PROTECT_PROFIT_AMOUNT / (100 * CONTRACT_QTY));
+}
+
+function isTradeExpirationPassed(trade) {
+  if (!trade.expiration || trade.expiration === 'غير متوفر') return false;
+
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+
+  return today > trade.expiration;
+}
+
 async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) {
   const isFinal = targetName === 'TP3';
 
@@ -580,20 +601,25 @@ async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) 
   const current = Number(optionPrice || 0);
   const high = Number(trade.optionHigh || trade.optionEntry || 0);
 
-  const profit = current - entry;
-  const maxProfit = high - entry;
+  const profitAmount = entry && current
+    ? (current - entry) * 100 * CONTRACT_QTY
+    : 0;
 
-  const profitText = profit >= 0
-    ? `+${fmtPrice(profit)}`
-    : `-${fmtPrice(Math.abs(profit))}`;
+  const maxProfitAmount = entry && high
+    ? (high - entry) * 100 * CONTRACT_QTY
+    : 0;
 
-  const maxProfitText = maxProfit >= 0
-    ? `+${fmtPrice(maxProfit)}`
-    : `-${fmtPrice(Math.abs(maxProfit))}`;
+  const profitText = profitAmount >= 0
+    ? `+$${fmtPrice(profitAmount)}`
+    : `-$${fmtPrice(Math.abs(profitAmount))}`;
 
-  const profitIcon = profit >= 0 ? '📈' : '📉';
+  const maxProfitText = maxProfitAmount >= 0
+    ? `+$${fmtPrice(maxProfitAmount)}`
+    : `-$${fmtPrice(Math.abs(maxProfitAmount))}`;
 
-  const targetNote = profit > 0
+  const profitIcon = profitAmount >= 0 ? '📈' : '📉';
+
+  const targetNote = profitAmount > 0
     ? `📌 تحقق هدف السهم والعقد حالياً فوق الدخول.
 تابع وقفك ولا تخلي الربح يتحول خسارة.`
     : `⚠️ تحقق هدف السهم، لكن العقد حالياً أقل من سعر الدخول.
@@ -603,21 +629,31 @@ async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) 
     ? `🎯🔥 تحقق الهدف الثالث — ST Decision
 
 📊 السهم: ${trade.symbol}
+
 🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
 ✅ تحقق: ${targetName}
+
 💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
+
 💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
 💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
-${profitIcon} نتيجة العقد الحالية: ${profitText}
-🔥 أعلى ربح وصل له العقد: ${maxProfitText}
+
+${profitIcon} نتيجة العقد الحالية:
+${profitText}
+
+🔥 أعلى ربح وصل له العقد:
+${maxProfitText}
 
 ━━━━━━━━━━━━━━
-🏁 انتهت المتابعة رسميًا
 
-${targetNote}
+🚀 تم تحقيق الهدف الثالث بنجاح.
+
+📌 سيتم استمرار متابعة العقد للمستمرين.
+
+🔄 سيتم إرسال تحديثات جديدة عند تسجيل قمم جديدة للعقد.
 
 ⚠️ ليست توصية شراء أو بيع`
     : `🎯 تحقق هدف السهم ${targetName} — ST Decision
@@ -689,6 +725,7 @@ ${trade.optionTicker}
 
 📌 تم إيقاف المتابعة.`);
 }
+
 async function getFinnhubPrice(symbol) {
   if (!FINNHUB_API_KEY) {
     throw new Error('Missing FINNHUB_API_KEY');
@@ -706,7 +743,6 @@ async function getFinnhubPrice(symbol) {
 
   return price;
 }
-
 async function getMassiveOptionSnapshot(symbol, optionTicker) {
   if (!MASSIVE_API_KEY) {
     throw new Error('Missing MASSIVE_API_KEY');
@@ -1042,6 +1078,7 @@ function canCreateDecision(gex, radar) {
     reason: 'توافق كامل'
   };
 }
+
 async function notifyAdminReject(symbol, reason) {
   if (!ADMIN_CHAT_ID) return;
 
@@ -1234,7 +1271,6 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
-
 async function sendWatchMessage(setup, gex, radar) {
   const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
   const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
@@ -1447,6 +1483,7 @@ ${reason}`;
 
   await sendSignalMessage(text);
 }
+
 async function saveActiveTradeToDb(trade) {
   try {
     await decisionSupabase
@@ -1489,10 +1526,10 @@ async function closeActiveTradeInDb(id, reason, extra = {}) {
     await decisionSupabase
       .from('decision_active_trades')
       .update({
-        status: reason === 'EXPIRED' ? 'EXPIRED' : 'CLOSED',
+        status: reason === 'EXPIRED' || reason === 'EXPIRED_AFTER_TP3' ? 'EXPIRED' : 'CLOSED',
         close_reason: reason,
         closed_at: new Date().toISOString(),
-        expired_at: reason === 'EXPIRED' ? new Date().toISOString() : null,
+        expired_at: reason === 'EXPIRED' || reason === 'EXPIRED_AFTER_TP3' ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
         ...extra
       })
@@ -1628,7 +1665,6 @@ async function saveTradeHistoryOpen(trade) {
     console.error('SAVE TRADE HISTORY OPEN ERROR:', err.message);
   }
 }
-
 async function updateTradeHigh(trade) {
   if (!trade.tradeUid) {
     trade.tradeUid = buildTradeUid(trade);
@@ -1686,6 +1722,8 @@ async function closeTradeHistory(trade, closeReason, optionExit) {
 
   const isWin =
     closeReason === 'TP3' ||
+    closeReason === 'TP3_PROTECT_20' ||
+    closeReason === 'EXPIRED_AFTER_TP3' ||
     trade.tp1Hit ||
     trade.tp2Hit ||
     trade.tp3Hit ||
@@ -1873,21 +1911,88 @@ async function monitorActiveTrades() {
 
       if (!trade.tp3Hit && hasTargetHit(trade, stockPrice, trade.tp3)) {
         trade.tp3Hit = true;
+
         await sendTargetHitMessage(trade, 'TP3', stockPrice, optionPrice);
+        await saveActiveTradeToDb(trade);
+        await updateTradeHigh(trade);
+      }
 
-        activeTrades.delete(key);
-        sentSetupKeys.delete(trade.key);
+      if (trade.tp3Hit) {
+        const protectPrice = getProtectPriceAfterTp3(trade);
 
-        await closeActiveTradeInDb(key, 'TP3', {
-          tp1_hit: !!trade.tp1Hit,
-          tp2_hit: !!trade.tp2Hit,
-          tp3_hit: true,
-          sl_hit: false
-        });
+        if (isTradeExpirationPassed(trade)) {
+          activeTrades.delete(key);
+          sentSetupKeys.delete(trade.key);
 
-        await closeTradeHistory(trade, 'TP3', optionPrice);
+          await closeActiveTradeInDb(key, 'EXPIRED_AFTER_TP3', {
+            tp1_hit: !!trade.tp1Hit,
+            tp2_hit: !!trade.tp2Hit,
+            tp3_hit: true,
+            sl_hit: false,
+            option_high: trade.optionHigh
+          });
 
-        continue;
+          await closeTradeHistory(trade, 'EXPIRED_AFTER_TP3', optionPrice);
+
+          await sendSignalMessage(`📅 انتهاء متابعة الصفقة — ST Decision
+
+📊 السهم: ${trade.symbol}
+
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+✅ تم تحقيق الهدف الثالث سابقاً
+
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 آخر سعر للعقد: ${fmtPrice(optionPrice)}
+
+🔥 أعلى سعر وصل له العقد: ${fmtPrice(trade.optionHigh)}
+🔥 أعلى ربح تحقق: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
+
+📌 تم إغلاق المتابعة بسبب انتهاء تاريخ العقد.
+
+⚠️ ليست توصية شراء أو بيع`);
+
+          continue;
+        }
+
+        if (protectPrice && optionPrice <= protectPrice) {
+          activeTrades.delete(key);
+          sentSetupKeys.delete(trade.key);
+
+          await closeActiveTradeInDb(key, 'TP3_PROTECT_20', {
+            tp1_hit: !!trade.tp1Hit,
+            tp2_hit: !!trade.tp2Hit,
+            tp3_hit: true,
+            sl_hit: false,
+            option_high: trade.optionHigh
+          });
+
+          await closeTradeHistory(trade, 'TP3_PROTECT_20', optionPrice);
+
+          await sendSignalMessage(`🟡 تنبيه للمستمرين — ST Decision
+
+📊 السهم: ${trade.symbol}
+
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 السعر الحالي: ${fmtPrice(optionPrice)}
+
+🔥 أعلى سعر وصل له العقد: ${fmtPrice(trade.optionHigh)}
+🔥 أعلى ربح تحقق: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
+
+📌 عاد العقد لمنطقة الحماية المحددة.
+
+✅ أنصح بالخروج للمستمرين.
+
+⚠️ ليست توصية شراء أو بيع`);
+
+          continue;
+        }
       }
 
       if (trade.optionStop && optionPrice <= trade.optionStop) {
@@ -1918,7 +2023,32 @@ async function monitorActiveTrades() {
         await saveActiveTradeToDb(trade);
         await updateTradeHigh(trade);
 
-        await sendSignalMessage(`📈 تحديث العقد — ST Decision
+        if (trade.tp3Hit) {
+          await sendSignalMessage(`🚀 قمة جديدة للعقد — ST Decision
+
+📊 السهم: ${trade.symbol}
+
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 السعر الحالي: ${fmtPrice(optionPrice)}
+
+🔥 أعلى سعر وصل له العقد:
+${fmtPrice(trade.optionHigh)}
+
+🔥 أعلى ربح تحقق:
++$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
+
+✅ تم تحقيق الهدف الثالث مسبقاً
+
+📈 تم تسجيل قمة جديدة للعقد
+📌 المتابعة مستمرة للمستمرين
+
+⚠️ ليست توصية شراء أو بيع`);
+        } else {
+          await sendSignalMessage(`📈 تحديث العقد — ST Decision
 
 📊 السهم: ${trade.symbol}
 🎯 العقد:
@@ -1939,6 +2069,7 @@ TP3: ${trade.tp3Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
 🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 📦 OI: ${fmtNum(trade.optionOi)}
 📊 Volume: ${fmtNum(trade.optionVolume)}`);
+        }
       }
     } catch (err) {
       console.error('ACTIVE TRADE MONITOR ERROR:', key, err.message);
@@ -2034,8 +2165,8 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 
 متابعة الأهداف:
 البوت يراقب TP1 و TP2 و TP3 على سعر السهم.
-إذا تحقق TP3 تنتهي المتابعة تلقائيًا.
-إذا حقق العقد ربح ثم رجع تحت وقف العقد تظهر الرسالة كتنبيه للمستمرين مع أعلى ربح تحقق.
+إذا تحقق TP3 تستمر المتابعة للمستمرين ويتم إرسال تحديثات عند تسجيل قمم جديدة للعقد.
+إذا عاد العقد لمنطقة الحماية بعد TP3 يتم إرسال تنبيه للمستمرين وإغلاق المتابعة.
 
 طريقة القرار:
 يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
