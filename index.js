@@ -257,7 +257,6 @@ function fmtNum(n) {
 function cleanText(text) {
   return String(text || '').trim();
 }
-
 function pushGlobalHistory(arr, item, limit = HISTORY_LIMIT) {
   const existingIndex = arr.findIndex(x => x.symbol === item.symbol);
 
@@ -383,6 +382,7 @@ function extractRadarSide(text) {
 
   return 'NEUTRAL';
 }
+
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
@@ -512,7 +512,6 @@ function getStrikeFromEntry(entry, side) {
 
   return null;
 }
-
 function getContractDisplay(data) {
   if (!data || !data.symbol || !data.strike || !data.side) {
     return 'غير متوفر';
@@ -592,6 +591,72 @@ function isTradeExpirationPassed(trade) {
   }).format(new Date());
 
   return today > trade.expiration;
+}
+
+// =====================
+// Gamma Support Ratio Addition
+// =====================
+
+function parseSignedNumber(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+function extractGammaLevelPower(text, label) {
+  const re = new RegExp(`${label}[^\\n]*\\n\\s*القوة:\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`, 'i');
+  const m = text.match(re);
+  return m ? parseSignedNumber(m[1]) : null;
+}
+
+function calculateGammaSupportBonus(text, side) {
+  const r1 = extractGammaLevelPower(text, 'R1️⃣');
+  const r2 = extractGammaLevelPower(text, 'R2️⃣');
+  const r3 = extractGammaLevelPower(text, 'R3️⃣');
+
+  const s1 = extractGammaLevelPower(text, 'S1️⃣');
+  const s2 = extractGammaLevelPower(text, 'S2️⃣');
+  const s3 = extractGammaLevelPower(text, 'S3️⃣');
+
+  if (side === 'CALL') {
+    const supports = [s1, s2, s3]
+      .filter(x => x !== null && x > 0)
+      .map(x => Math.abs(x));
+
+    const resistance = Math.abs(r1 || 0);
+
+    if (!supports.length || !resistance) {
+      return { bonus: 0, ratio: 0 };
+    }
+
+    const bestSupport = Math.max(...supports);
+    const ratio = bestSupport / resistance;
+
+    if (ratio >= 10) return { bonus: 2, ratio };
+    if (ratio >= 5) return { bonus: 1, ratio };
+    return { bonus: 0, ratio };
+  }
+
+  if (side === 'PUT') {
+    const resistances = [r1, r2, r3]
+      .filter(x => x !== null && x < 0)
+      .map(x => Math.abs(x));
+
+    const support = Math.abs(s1 || 0);
+
+    if (!resistances.length || !support) {
+      return { bonus: 0, ratio: 0 };
+    }
+
+    const bestResistance = Math.max(...resistances);
+    const ratio = bestResistance / support;
+
+    if (ratio >= 10) return { bonus: 2, ratio };
+    if (ratio >= 5) return { bonus: 1, ratio };
+    return { bonus: 0, ratio };
+  }
+
+  return { bonus: 0, ratio: 0 };
 }
 
 async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) {
@@ -884,12 +949,37 @@ async function findBestOptionContract(symbol, expiration, side, preferredStrike)
   return normalized[0];
 }
 
+async function findAlternativeOptionContract(symbol, expiration, side, currentPrice, oldStrike) {
+  const newPreferredStrike = getStrikeFromEntry(currentPrice, side);
+
+  if (!newPreferredStrike) return null;
+
+  const alternative = await findBestOptionContract(
+    symbol,
+    expiration,
+    side,
+    newPreferredStrike
+  );
+
+  if (!alternative) return null;
+
+  return {
+    ...alternative,
+    oldStrike,
+    newPreferredStrike,
+    strikeChanged: Number(alternative.strike) !== Number(oldStrike)
+  };
+}
+
 function parseGex(text) {
   const symbol = getSymbolFromText(text);
   if (!symbol) return null;
 
   const side = extractBiasFromGex(text);
   const score = extractScore(text);
+
+  const gammaSupport = calculateGammaSupportBonus(text, side);
+  const decisionScore = Math.min(10, score + gammaSupport.bonus);
 
   const explicitEntry = extractEntry(text, side);
   const messagePrice = extractCurrentPriceFromText(text);
@@ -922,6 +1012,9 @@ function parseGex(text) {
     symbol,
     side,
     score,
+    decisionScore,
+    gammaSupportBonus: gammaSupport.bonus,
+    gammaSupportRatio: gammaSupport.ratio,
     entry,
     explicitEntry,
     messagePrice,
@@ -1036,10 +1129,10 @@ function canCreateDecision(gex, radar) {
     };
   }
 
-  if (gex.score < MIN_SCORE) {
+  if ((gex.decisionScore || gex.score) < MIN_SCORE) {
     return {
       ok: false,
-      reason: `Score ضعيف: ${gex.score}/10`
+      reason: `Score ضعيف: ${gex.decisionScore || gex.score}/10`
     };
   }
 
@@ -1078,7 +1171,6 @@ function canCreateDecision(gex, radar) {
     reason: 'توافق كامل'
   };
 }
-
 async function notifyAdminReject(symbol, reason) {
   if (!ADMIN_CHAT_ID) return;
 
@@ -1247,7 +1339,11 @@ async function createWatchSetup(symbol, gex, radar) {
     tp3Hit: false,
     slHit: false,
 
-    score: gex.score,
+    score: gex.decisionScore || gex.score,
+    baseScore: gex.score,
+    gammaSupportBonus: gex.gammaSupportBonus || 0,
+    gammaSupportRatio: gex.gammaSupportRatio || 0,
+
     currentPrice,
     createdAt: now(),
     status: 'WATCHING'
@@ -1271,6 +1367,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
+
 async function sendWatchMessage(setup, gex, radar) {
   const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
   const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
@@ -1330,7 +1427,9 @@ Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 📊 سبب الصفقة
 
 ✅ GEX: ${setup.side} BIAS
-✅ Score القاما: ${setup.score} / 10
+✅ Score القاما: ${setup.baseScore} / 10
+✅ دعم الجاما أضاف: +${setup.gammaSupportBonus}
+✅ Score القرار: ${setup.score} / 10
 ✅ Radar: ${radar.side}
 ✅ انتهاء مقترح/مسيطر: ${setup.expiration}
 
@@ -1370,37 +1469,79 @@ async function sendActivatedMessage(setup, price) {
     console.error('ACTIVATION OPTION ERROR:', err.message);
   }
 
-  const optionEntry = optionData?.mid || setup.optionEntry || null;
+  let optionEntry = optionData?.mid || setup.optionEntry || null;
+  let strikeChanged = false;
+  let oldContractText = getContractDisplay(setup);
+  let oldOptionTicker = setup.optionTicker;
+  let oldOptionPrice = optionEntry;
 
   if (
     !optionEntry ||
     optionEntry < MIN_CONTRACT_PRICE ||
     optionEntry > MAX_CONTRACT_PRICE
   ) {
-    activeSetups.delete(setup.key);
-    activeTrades.delete(setup.key);
-    sentSetupKeys.delete(setup.key);
+    let alternative = null;
 
-    await closeActiveTradeInDb(setup.key, 'CANCELLED_PRICE_RANGE');
+    try {
+      alternative = await findAlternativeOptionContract(
+        setup.symbol,
+        setup.expiration,
+        setup.side,
+        price,
+        setup.strike
+      );
+    } catch (err) {
+      console.error('ALTERNATIVE OPTION ERROR:', err.message);
+    }
 
-    await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
+    if (
+      alternative &&
+      alternative.mid &&
+      alternative.mid >= MIN_CONTRACT_PRICE &&
+      alternative.mid <= MAX_CONTRACT_PRICE
+    ) {
+      strikeChanged = alternative.strikeChanged;
+
+      setup.strike = alternative.strike;
+      setup.optionTicker = alternative.optionTicker;
+      setup.optionEntry = alternative.mid;
+      setup.optionBid = alternative.bid;
+      setup.optionAsk = alternative.ask;
+      setup.optionLast = alternative.last;
+      setup.optionVolume = alternative.volume;
+      setup.optionOi = alternative.oi;
+      setup.optionDelta = alternative.delta;
+      setup.optionGamma = alternative.gamma;
+
+      optionData = alternative;
+      optionEntry = alternative.mid;
+    } else {
+      activeSetups.delete(setup.key);
+      activeTrades.delete(setup.key);
+      sentSetupKeys.delete(setup.key);
+
+      await closeActiveTradeInDb(setup.key, 'CANCELLED_PRICE_RANGE');
+
+      await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
 
 📊 السهم: ${setup.symbol}
 النوع: ${sideArabic}
 📅 الانتهاء: ${setup.expiration}
 
 🎯 العقد:
-${getContractDisplay(setup)}
-${setup.optionTicker || 'غير متوفر'}
+${oldContractText}
+${oldOptionTicker || 'غير متوفر'}
 
-💵 سعر العقد الحالي: ${fmtPrice(optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(oldOptionPrice)}
 
 📌 السبب:
 سعر العقد خرج عن النطاق المطلوب ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}
+ولم يتم العثور على عقد بديل مناسب داخل النطاق.
 
 ⚠️ ليست توصية شراء أو بيع`);
 
-    return;
+      return;
+    }
   }
 
   const optionStop = Math.max(optionEntry - CONTRACT_STOP_DROP, 0.01);
@@ -1434,7 +1575,29 @@ ${setup.optionTicker || 'غير متوفر'}
 
   const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
 
+  const strikeChangedNote = strikeChanged
+    ? `
+
+⚠️ تنبيه مهم
+
+تم تغيير العقد أثناء التفعيل لأن العقد الأصلي تجاوز الحد السعري المسموح.
+
+العقد الأصلي:
+${oldContractText}
+${oldOptionTicker || 'غير متوفر'}
+سعره وقت التفعيل: ${fmtPrice(oldOptionPrice)}
+
+العقد الحالي:
+${getContractDisplay(setup)}
+${setup.optionTicker || 'غير متوفر'}
+
+✅ تم اعتماد العقد الحالي للمتابعة.
+
+━━━━━━━━━━━━━━`
+    : '';
+
   const text = `✅ تم تفعيل الصفقة — ST Decision
+${strikeChangedNote}
 
 📊 السهم: ${setup.symbol}
 ${sideEmoji} النوع: ${sideArabic}
@@ -1466,7 +1629,6 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 
   await sendSignalMessage(text);
 }
-
 async function sendCancelledMessage(setup, price, reason) {
   const text = `❌ تم إلغاء صفقة المراقبة — ST Decision
 
@@ -1665,6 +1827,7 @@ async function saveTradeHistoryOpen(trade) {
     console.error('SAVE TRADE HISTORY OPEN ERROR:', err.message);
   }
 }
+
 async function updateTradeHigh(trade) {
   if (!trade.tradeUid) {
     trade.tradeUid = buildTradeUid(trade);
@@ -2174,6 +2337,13 @@ ${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج
 
 منطق الرادار:
 أولوية لخلاصة المتابعة. إذا الخلاصة تقول انتظر = لا صفقة.
+
+تعديل Gamma Support:
+بوت القرار يضيف نقاط إضافية إذا كان دعم الجاما خلف الصفقة أقوى من المقاومة أمامها.
+
+تعديل العقد البديل:
+إذا تجاوز سعر العقد الحد وقت التفعيل، يبحث البوت عن عقد بديل داخل النطاق.
+إذا تغير السترايك يظهر تنبيه داخل رسالة التفعيل.
 
 طريقة الوقف:
 وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 1.5%`,
