@@ -22,6 +22,8 @@ const SIGNALS_THREAD_ID = process.env.SIGNALS_THREAD_ID
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY;
 const MASSIVE_BASE_URL = process.env.MASSIVE_BASE_URL || 'https://api.massive.com';
+const UNIFIED_BOT_URL = process.env.UNIFIED_BOT_URL;
+const DECISION_ALERT_SECRET = process.env.DECISION_ALERT_SECRET;
 
 const decisionSupabase = createClient(
   process.env.SUPABASE_URL,
@@ -62,6 +64,26 @@ async function sendSignalMessage(text) {
   }
 
   return bot.sendMessage(SIGNALS_CHAT_ID, text, options);
+}
+
+  async function sendUnifiedPrivateAlert(payload) {
+  if (!UNIFIED_BOT_URL || !DECISION_ALERT_SECRET) {
+    console.error('Missing UNIFIED_BOT_URL or DECISION_ALERT_SECRET');
+    return;
+  }
+
+  try {
+    await axios.post(
+      `${String(UNIFIED_BOT_URL).replace(/\/+$/, '')}/decision-alert`,
+      {
+        secret: DECISION_ALERT_SECRET,
+        ...payload
+      },
+      { timeout: 15000 }
+    );
+  } catch (err) {
+    console.error('UNIFIED PRIVATE ALERT ERROR:', err.response?.data || err.message);
+  }
 }
 
 async function loadDecisionMessages() {
@@ -1644,6 +1666,22 @@ ${setup.optionTicker || 'غير متوفر'}
 ${reason}`;
 
   await sendSignalMessage(text);
+
+await sendUnifiedPrivateAlert({
+  event: 'activation',
+  symbol: setup.symbol,
+  side: setup.side,
+  expiration: setup.expiration,
+  optionTicker: setup.optionTicker,
+  contract: getContractDisplay(setup),
+  stockEntry: setup.entry,
+  optionEntry: setup.optionEntry,
+  stockStop: setup.stop,
+  optionStop: setup.optionStop,
+  tp1: setup.tp1,
+  tp2: setup.tp2,
+  tp3: setup.tp3
+});
 }
 
 async function saveActiveTradeToDb(trade) {
@@ -2175,6 +2213,27 @@ ${trade.optionTicker}
         await closeTradeHistory(trade, 'SL', optionPrice);
         await sendBetterStopMessage(trade, optionPrice);
 
+        await sendUnifiedPrivateAlert({
+  event: 'stop',
+  symbol: trade.symbol,
+  side: trade.side,
+  optionTicker: trade.optionTicker,
+  contract: `${getContractDisplay(trade)}
+${trade.optionTicker || ''}`,
+  text: `🛑 ضرب وقف العقد — ST Decision
+
+📊 السهم: ${trade.symbol}
+🎯 العقد:
+${getContractDisplay(trade)}
+${trade.optionTicker}
+
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
+
+📌 تم إيقاف المتابعة.`
+});
+        
         continue;
       }
 
