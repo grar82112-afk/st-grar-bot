@@ -1650,6 +1650,16 @@ TP3: ${setup.tp3 || 'غير متوفر'}
 ⚠️ ليست توصية شراء أو بيع`;
 
   await sendSignalMessage(text);
+
+await sendUnifiedPrivateAlert({
+  event: 'activation',
+  symbol: setup.symbol,
+  side: setup.side,
+  optionTicker: setup.optionTicker,
+  contract: `${getContractDisplay(setup)} ${setup.optionTicker || ''}`,
+  text
+});
+  
 }
 async function sendCancelledMessage(setup, price, reason) {
   const text = `❌ تم إلغاء صفقة المراقبة — ST Decision
@@ -1667,21 +1677,7 @@ ${reason}`;
 
   await sendSignalMessage(text);
 
-await sendUnifiedPrivateAlert({
-  event: 'activation',
-  symbol: setup.symbol,
-  side: setup.side,
-  expiration: setup.expiration,
-  optionTicker: setup.optionTicker,
-  contract: getContractDisplay(setup),
-  stockEntry: setup.entry,
-  optionEntry: setup.optionEntry,
-  stockStop: setup.stop,
-  optionStop: setup.optionStop,
-  tp1: setup.tp1,
-  tp2: setup.tp2,
-  tp3: setup.tp3
-});
+
 }
 
 async function saveActiveTradeToDb(trade) {
