@@ -871,7 +871,7 @@ async function finalizeTradeStop(key, trade, optionPrice, closeReason = 'SL') {
   await sendBetterStopMessage(trade, optionPrice);
 
   await sendUnifiedPrivateAlert({
-    event: 'final_stop'
+    event: 'final_stop',
     symbol: trade.symbol,
     side: trade.side,
     optionTicker: trade.optionTicker,
