@@ -921,25 +921,78 @@ async function handleSmartStopBreach(key, trade, optionPrice, stockPrice) {
     trade.radarReviewResult = radarResult;
 
     const gammaSupports = reviewSupportsTrade(gammaResult, trade.side);
-    const radarSupports = reviewSupportsTrade(radarResult, trade.side);
+const radarSupports = reviewSupportsTrade(radarResult, trade.side);
 
-    if (gammaSupports && radarSupports) {
-      trade.stopReviewStatus = 'CONTINUING';
-      trade.nextStopReviewAt = now() + STOP_REVIEW_CONTINUE_MS;
-      trade.stopReviewError = null;
+const gammaSide = String(
+  gammaResult?.side ||
+  gammaResult?.bias ||
+  gammaResult?.winnerSide ||
+  'NEUTRAL'
+).toUpperCase();
 
-      if (!trade.stopReviewContinuationSent) {
-        trade.stopReviewContinuationSent = true;
-        await sendStopReviewContinuationMessage(trade, optionPrice, stockPrice);
-      }
+const radarSide = String(
+  radarResult?.side ||
+  radarResult?.bias ||
+  radarResult?.winnerSide ||
+  'NEUTRAL'
+).toUpperCase();
 
-      await saveActiveTradeToDb(trade);
-      return;
-    }
+const oppositeSide = trade.side === 'CALL' ? 'PUT' : 'CALL';
 
-    trade.stopReviewStatus = 'REJECTED';
-    await saveActiveTradeToDb(trade);
-    await finalizeTradeStop(key, trade, optionPrice, 'SL_REVIEW_REJECTED');
+const gammaOpposite = gammaSide === oppositeSide;
+const radarOpposite = radarSide === oppositeSide;
+
+const gammaNeutral = gammaSide === 'NEUTRAL';
+const radarNeutral = radarSide === 'NEUTRAL';
+
+if (gammaSupports && radarSupports) {
+  trade.stopReviewStatus = 'CONTINUING';
+  trade.nextStopReviewAt = now() + STOP_REVIEW_CONTINUE_MS;
+  trade.stopReviewError = null;
+
+  if (!trade.stopReviewContinuationSent) {
+    trade.stopReviewContinuationSent = true;
+    await sendStopReviewContinuationMessage(
+      trade,
+      optionPrice,
+      stockPrice
+    );
+  }
+
+  await saveActiveTradeToDb(trade);
+  return;
+}
+
+if (
+  (gammaSupports && radarNeutral) ||
+  (radarSupports && gammaNeutral)
+) {
+  trade.stopReviewStatus = 'WAITING_REVIEW';
+  trade.nextStopReviewAt = now() + STOP_REVIEW_RETRY_MS;
+  trade.stopReviewError = null;
+
+  await saveActiveTradeToDb(trade);
+  return;
+}
+
+if (gammaOpposite || radarOpposite) {
+  trade.stopReviewStatus = 'REJECTED';
+  await saveActiveTradeToDb(trade);
+  await finalizeTradeStop(
+    key,
+    trade,
+    optionPrice,
+    'SL_REVIEW_REJECTED'
+  );
+  return;
+}
+
+trade.stopReviewStatus = 'WAITING_REVIEW';
+trade.nextStopReviewAt = now() + STOP_REVIEW_RETRY_MS;
+trade.stopReviewError = null;
+
+await saveActiveTradeToDb(trade);
+return;
   } catch (err) {
     trade.stopReviewStatus = 'FAILED_RETRY';
     trade.stopReviewError = String(err.response?.data?.error || err.message || err);
