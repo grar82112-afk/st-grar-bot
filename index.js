@@ -164,9 +164,9 @@ async function processDecisionMessages() {
   }
 }
 
-console.log('ð ST Decision Bot Started');
+console.log('🚀 ST Decision Bot Started');
 
-bot.sendMessage(ADMIN_CHAT_ID, 'â ST Decision Bot Started').catch(() => {});
+bot.sendMessage(ADMIN_CHAT_ID, '✅ ST Decision Bot Started').catch(() => {});
 
 // =====================
 // Helpers
@@ -244,8 +244,8 @@ function isDecisionTradingTime() {
 
 function tradingTimeText() {
   return isUsDstNow()
-    ? 'Ø§ÙØµÙÙ: 4:30 Ù Ø¥ÙÙ 11:00 Ù Ø¨ØªÙÙÙØª Ø§ÙØ³Ø¹ÙØ¯ÙØ©'
-    : 'Ø§ÙØ´ØªØ§Ø¡: 5:30 Ù Ø¥ÙÙ 12:00 Øµ Ø¨ØªÙÙÙØª Ø§ÙØ³Ø¹ÙØ¯ÙØ©';
+    ? 'الصيف: 4:30 م إلى 11:00 م بتوقيت السعودية'
+    : 'الشتاء: 5:30 م إلى 12:00 ص بتوقيت السعودية';
 }
 
 function getIsoWeekNumber(date) {
@@ -279,12 +279,12 @@ function getWeekKey() {
 }
 
 function fmtPrice(n) {
-  if (n === null || n === undefined || isNaN(Number(n))) return 'ØºÙØ± ÙØªÙÙØ±';
+  if (n === null || n === undefined || isNaN(Number(n))) return 'غير متوفر';
   return Number(n).toFixed(2);
 }
 
 function fmtNum(n) {
-  if (n === null || n === undefined || isNaN(Number(n))) return 'ØºÙØ± ÙØªÙÙØ±';
+  if (n === null || n === undefined || isNaN(Number(n))) return 'غير متوفر';
   return Number(n).toLocaleString('en-US');
 }
 
@@ -311,9 +311,9 @@ function isFresh(item) {
 
 function getSymbolFromText(text) {
   const patterns = [
-    /ð\s*Ø§ÙØ³ÙÙ:\s*([A-Z]{1,8})/i,
-    /Ø±Ø§Ø¯Ø§Ø± Ø§ÙØ³ÙÙ\s*â\s*([A-Z]{1,8})/i,
-    /Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ:\s*([A-Z]{1,8})/i,
+    /📊\s*السهم:\s*([A-Z]{1,8})/i,
+    /رادار السوق\s*—\s*([A-Z]{1,8})/i,
+    /السهم الحالي:\s*([A-Z]{1,8})/i,
     /Symbol:\s*([A-Z]{1,8})/i
   ];
 
@@ -337,10 +337,10 @@ function isGexMessage(text) {
 
 function isRadarMessage(text) {
   return (
-    text.includes('Ø±Ø§Ø¯Ø§Ø± Ø§ÙØ³ÙÙ') ||
-    text.includes('ÙØ±Ø§Ø¡Ø© Ø§ÙØ³ÙÙÙØ© Ø§ÙÙØªÙØ¯ÙØ©') ||
-    text.includes('Ø®ÙØ§ØµØ© Ø§ÙÙØªØ§Ø¨Ø¹Ø©') ||
-    text.includes('Ø§ØªØ¬Ø§Ù ØªØ¯ÙÙ Ø§ÙØ¹ÙÙØ¯')
+    text.includes('رادار السوق') ||
+    text.includes('قراءة السيولة المتقدمة') ||
+    text.includes('خلاصة المتابعة') ||
+    text.includes('اتجاه تدفق العقود')
   );
 }
 
@@ -354,8 +354,8 @@ function extractNumberAfter(label, text) {
 function extractScore(text) {
   const m =
     text.match(/Score:\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i) ||
-    text.match(/Ø§ÙØ«ÙØ©:\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i) ||
-    text.match(/ÙÙØ© Ø§ÙØ³ÙØ·Ø±Ø©:\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i);
+    text.match(/الثقة:\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i) ||
+    text.match(/قوة السيطرة:\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i);
 
   return m ? Number(m[1]) : 0;
 }
@@ -368,48 +368,48 @@ function extractBiasFromGex(text) {
 
 function extractRadarSide(text) {
   if (
-    text.includes('Ø­Ø³Ø¨ Ø§ÙÙØ¹Ø·ÙØ§Øª Ø§ÙØ­Ø§ÙÙØ©: Ø§ÙØªØ¸Ø±') ||
-    text.includes('Ø§ÙØªØ¸Ø±') ||
-    text.includes('ÙØ§ ÙÙØ¬Ø¯ ØªÙØ§ÙÙ ÙØ§Ù') ||
-    text.includes('ØªØ¯ÙÙ Ø§ÙØ¹ÙÙØ¯ ØºÙØ± Ø­Ø§Ø³Ù')
+    text.includes('حسب المعطيات الحالية: انتظر') ||
+    text.includes('انتظر') ||
+    text.includes('لا يوجد توافق كاف') ||
+    text.includes('تدفق العقود غير حاسم')
   ) {
     return 'NEUTRAL';
   }
 
   if (
-    text.includes('ÙØ±Ø§ÙØ¨Ø© ÙÙÙ') ||
-    text.includes('ØªØ§Ø¨Ø¹ Ø§ÙÙÙÙ') ||
-    text.includes('ÙØªØ§Ø¨Ø¹Ø© ÙÙÙ') ||
-    text.includes('Ø¯Ø®ÙÙ ÙÙÙ')
+    text.includes('مراقبة كول') ||
+    text.includes('تابع الكول') ||
+    text.includes('متابعة كول') ||
+    text.includes('دخول كول')
   ) {
     return 'CALL';
   }
 
   if (
-    text.includes('ÙØ±Ø§ÙØ¨Ø© Ø¨ÙØª') ||
-    text.includes('ØªØ§Ø¨Ø¹ Ø§ÙØ¨ÙØª') ||
-    text.includes('ÙØªØ§Ø¨Ø¹Ø© Ø¨ÙØª') ||
-    text.includes('Ø¯Ø®ÙÙ Ø¨ÙØª')
+    text.includes('مراقبة بوت') ||
+    text.includes('تابع البوت') ||
+    text.includes('متابعة بوت') ||
+    text.includes('دخول بوت')
   ) {
     return 'PUT';
   }
 
   if (
-    text.includes('Ø³ÙØ·Ø±Ø© Ø§ÙÙÙÙ') ||
-    text.includes('Ø§ÙÙÙÙ ÙØ³ÙØ·Ø±') ||
-    text.includes('Ø§ÙÙØ´ØªØ±ÙÙ ÙØ³ÙØ·Ø±ÙÙ') ||
-    text.includes('Ø§ÙÙØ´ØªØ±ÙÙ ÙØ³ÙØ·Ø±ÙÙ Ø¹ÙÙ Ø§ÙÙ Ask') ||
-    text.includes('Ø§ÙØªØ­ÙØ· Ø§ÙØ´Ø±Ø§Ø¦Ù ÙØ³ÙØ·Ø±')
+    text.includes('سيطرة الكول') ||
+    text.includes('الكول يسيطر') ||
+    text.includes('المشترون يسيطرون') ||
+    text.includes('المشترون يسيطرون على الـ Ask') ||
+    text.includes('التحوط الشرائي مسيطر')
   ) {
     return 'CALL';
   }
 
   if (
-    text.includes('Ø³ÙØ·Ø±Ø© Ø§ÙØ¨ÙØª') ||
-    text.includes('Ø§ÙØ¨ÙØª ÙØ³ÙØ·Ø±') ||
-    text.includes('Ø§ÙØ¨Ø§Ø¦Ø¹ÙÙ ÙØ¶ØºØ·ÙÙ') ||
-    text.includes('Ø§ÙØ¨Ø§Ø¦Ø¹ÙÙ ÙØ¶ØºØ·ÙÙ Ø¹ÙÙ Ø§ÙÙ Bid') ||
-    text.includes('Ø§ÙØªØ­ÙØ· Ø§ÙØ¨ÙØ¹Ù ÙØ³ÙØ·Ø±')
+    text.includes('سيطرة البوت') ||
+    text.includes('البوت يسيطر') ||
+    text.includes('البائعون يضغطون') ||
+    text.includes('البائعون يضغطون على الـ Bid') ||
+    text.includes('التحوط البيعي مسيطر')
   ) {
     return 'PUT';
   }
@@ -420,39 +420,39 @@ function extractRadarSide(text) {
 function extractEntry(text, side) {
   if (side === 'CALL') {
     const m =
-      text.match(/Ø§Ø®ØªØ±Ø§Ù\s+([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/ÙÙÙ\s+([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/Ø§ÙØ¯Ø®ÙÙ\s*[:ï¼]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/Entry\s*[:ï¼]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i) ||
-      text.match(/Activation\s*[:ï¼]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
+      text.match(/اختراق\s+([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/فوق\s+([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/الدخول\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/Entry\s*[:：]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i) ||
+      text.match(/Activation\s*[:：]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
 
     if (m) return Number(m[1]);
   }
 
   if (side === 'PUT') {
     const m =
-      text.match(/ÙØ³Ø±\s+([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/ØªØ­Øª\s+([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/Ø§ÙØ¯Ø®ÙÙ\s*[:ï¼]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
-      text.match(/Entry\s*[:ï¼]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i) ||
-      text.match(/Activation\s*[:ï¼]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
+      text.match(/كسر\s+([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/تحت\s+([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/الدخول\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
+      text.match(/Entry\s*[:：]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i) ||
+      text.match(/Activation\s*[:：]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
 
     if (m) return Number(m[1]);
   }
 
   const m =
-    text.match(/Ø§ÙØ¯Ø®ÙÙ\s*[:ï¼]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
-    text.match(/Entry\s*[:ï¼]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
+    text.match(/الدخول\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)/) ||
+    text.match(/Entry\s*[:：]?\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
 
   return m ? Number(m[1]) : null;
 }
 
 function extractCurrentPriceFromText(text) {
   const patterns = [
-    /Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ:\s*([0-9]+(?:\.[0-9]+)?)/,
-    /Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ:\s*([0-9]+(?:\.[0-9]+)?)/,
-    /ð°\s*Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ:\s*([0-9]+(?:\.[0-9]+)?)/,
-    /ðµ\s*Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ:\s*([0-9]+(?:\.[0-9]+)?)/,
+    /سعر السهم الحالي:\s*([0-9]+(?:\.[0-9]+)?)/,
+    /السعر الحالي:\s*([0-9]+(?:\.[0-9]+)?)/,
+    /💰\s*سعر السهم الحالي:\s*([0-9]+(?:\.[0-9]+)?)/,
+    /💵\s*السعر الحالي:\s*([0-9]+(?:\.[0-9]+)?)/,
     /Current Price:\s*\$?([0-9]+(?:\.[0-9]+)?)/i,
     /Price:\s*\$?([0-9]+(?:\.[0-9]+)?)/i
   ];
@@ -467,14 +467,14 @@ function extractCurrentPriceFromText(text) {
 
 function isReadyText(text) {
   return (
-    text.includes('Ø¬Ø§ÙØ²Ø©') ||
-    text.includes('Ø¬Ø§ÙØ²') ||
-    text.includes('Ø¯Ø®ÙÙ Ø§ÙØ¢Ù') ||
-    text.includes('Ø¯Ø®ÙÙ Ø§ÙØ§Ù') ||
-    text.includes('Ø§Ø¯Ø®Ù Ø§ÙØ¢Ù') ||
-    text.includes('Ø§Ø¯Ø®Ù Ø§ÙØ§Ù') ||
-    text.includes('ØªÙØ¹ÙÙ Ø§ÙØ¢Ù') ||
-    text.includes('ØªÙØ¹ÙÙ Ø§ÙØ§Ù') ||
+    text.includes('جاهزة') ||
+    text.includes('جاهز') ||
+    text.includes('دخول الآن') ||
+    text.includes('دخول الان') ||
+    text.includes('ادخل الآن') ||
+    text.includes('ادخل الان') ||
+    text.includes('تفعيل الآن') ||
+    text.includes('تفعيل الان') ||
     text.includes('Ready Now') ||
     text.includes('READY NOW') ||
     text.includes('Entry Now') ||
@@ -493,8 +493,8 @@ function extractTargets(text) {
 
 function extractStop(text) {
   const m =
-    text.match(/Ø§ÙÙÙÙ Ø§ÙÙÙÙ:\s*\n?\s*([0-9]+(?:\.[0-9]+)?)/) ||
-    text.match(/Ø§ÙÙÙÙ:\s*\n?\s*([0-9]+(?:\.[0-9]+)?)/) ||
+    text.match(/الوقف الفني:\s*\n?\s*([0-9]+(?:\.[0-9]+)?)/) ||
+    text.match(/الوقف:\s*\n?\s*([0-9]+(?:\.[0-9]+)?)/) ||
     text.match(/SL:\s*\$?([0-9]+(?:\.[0-9]+)?)/i);
 
   return m ? Number(m[1]) : null;
@@ -511,15 +511,15 @@ function buildAutoStop(entry, side) {
 
 function extractSuggestedExpiration(text) {
   const m =
-    text.match(/Ø§ÙØ§ÙØªÙØ§Ø¡ Ø§ÙÙÙØªØ±Ø­:\s*\n?\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
-    text.match(/Ø§ÙØ§ÙØªÙØ§Ø¡ Ø§ÙÙØ³ÙØ·Ø±:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
+    text.match(/الانتهاء المقترح:\s*\n?\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
+    text.match(/الانتهاء المسيطر:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/) ||
     text.match(/Expiration:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
 
   return m ? m[1] : null;
 }
 
 function extractDominantExpiration(text) {
-  const matches = [...text.matchAll(/Ø§ÙØ§ÙØªÙØ§Ø¡ Ø§ÙÙØ³ÙØ·Ø±:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/g)];
+  const matches = [...text.matchAll(/الانتهاء المسيطر:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/g)];
   if (!matches.length) return null;
   return matches[0][1];
 }
@@ -548,7 +548,7 @@ function getStrikeFromEntry(entry, side) {
 }
 function getContractDisplay(data) {
   if (!data || !data.symbol || !data.strike || !data.side) {
-    return 'ØºÙØ± ÙØªÙÙØ±';
+    return 'غير متوفر';
   }
 
   return `${data.symbol} ${data.strike}${data.side === 'CALL' ? 'C' : 'P'}`;
@@ -615,7 +615,7 @@ function getProtectPriceAfterTp3(trade) {
 }
 
 function isTradeExpirationPassed(trade) {
-  if (!trade.expiration || trade.expiration === 'ØºÙØ± ÙØªÙÙØ±') return false;
+  if (!trade.expiration || trade.expiration === 'غير متوفر') return false;
 
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Riyadh',
@@ -638,19 +638,19 @@ function parseSignedNumber(v) {
 }
 
 function extractGammaLevelPower(text, label) {
-  const re = new RegExp(`${label}[^\\n]*\\n\\s*Ø§ÙÙÙØ©:\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`, 'i');
+  const re = new RegExp(`${label}[^\\n]*\\n\\s*القوة:\\s*([+-]?[0-9,]+(?:\\.[0-9]+)?)`, 'i');
   const m = text.match(re);
   return m ? parseSignedNumber(m[1]) : null;
 }
 
 function calculateGammaSupportBonus(text, side) {
-  const r1 = extractGammaLevelPower(text, 'R1ï¸â£');
-  const r2 = extractGammaLevelPower(text, 'R2ï¸â£');
-  const r3 = extractGammaLevelPower(text, 'R3ï¸â£');
+  const r1 = extractGammaLevelPower(text, 'R1️⃣');
+  const r2 = extractGammaLevelPower(text, 'R2️⃣');
+  const r3 = extractGammaLevelPower(text, 'R3️⃣');
 
-  const s1 = extractGammaLevelPower(text, 'S1ï¸â£');
-  const s2 = extractGammaLevelPower(text, 'S2ï¸â£');
-  const s3 = extractGammaLevelPower(text, 'S3ï¸â£');
+  const s1 = extractGammaLevelPower(text, 'S1️⃣');
+  const s2 = extractGammaLevelPower(text, 'S2️⃣');
+  const s3 = extractGammaLevelPower(text, 'S3️⃣');
 
   if (side === 'CALL') {
     const supports = [s1, s2, s3]
@@ -805,29 +805,29 @@ async function requestFreshStopReviews(trade) {
 }
 
 async function sendStopReviewContinuationMessage(trade, optionPrice, stockPrice) {
-  const text = `ð¡ ØªØ­Ø¯ÙØ« Ø§ÙØµÙÙØ© â ST Decision
+  const text = `🟡 تحديث الصفقة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionStop)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-ð° Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(stockPrice)}
-ð ÙÙÙ Ø§ÙØ³ÙÙ: ${fmtPrice(trade.stop)}
+💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
+🛑 وقف السهم: ${fmtPrice(trade.stop)}
 
-ÙØµÙ Ø§ÙØ¹ÙØ¯ Ø¥ÙÙ ÙØ³ØªÙÙ Ø§ÙÙÙÙ Ø§ÙØ³Ø¹Ø±ÙØ ÙÙÙ Ø¨Ø¹Ø¯ Ø¥Ø¹Ø§Ø¯Ø© ØªØ­ÙÙÙ Ø§ÙÙØ§ÙØ§ ÙØ§ÙØ³ÙÙÙØ© ØªØ¨ÙÙ Ø£Ù Ø£Ø³Ø¨Ø§Ø¨ Ø§ÙØ¯Ø®ÙÙ ÙØ§ Ø²Ø§ÙØª ÙØ§Ø¦ÙØ©.
+وصل العقد إلى مستوى الوقف السعري، لكن بعد إعادة تحليل القاما والسيولة تبين أن أسباب الدخول ما زالت قائمة.
 
-â ØªØ³ØªÙØ± ÙØªØ§Ø¨Ø¹Ø© Ø§ÙØµÙÙØ© ÙÙÙÙØ§ ÙÙØ¹Ø·ÙØ§ØªÙØ§ Ø§ÙØ­Ø§ÙÙØ©.
+✅ تستمر متابعة الصفقة وفقًا لمعطياتها الحالية.
 
-ð¡ Ø³ÙØªÙ ÙØ±Ø§ÙØ¨Ø© Ø§ÙØµÙÙØ© Ø¨Ø´ÙÙ ÙØ­Ø¸ÙØ ÙØ³ÙØªÙ Ø¥Ø±Ø³Ø§Ù Ø£Ù ØªØ­Ø¯ÙØ« Ø£Ù ÙÙÙ ÙÙØ§Ø¦Ù Ø¹ÙØ¯ ØªØºÙØ± Ø§ÙÙØ¹Ø·ÙØ§Øª.
+📡 سيتم مراقبة الصفقة بشكل لحظي، وسيتم إرسال أي تحديث أو وقف نهائي عند تغير المعطيات.
 
-â ï¸ Ø¥Ø°Ø§ ÙÙØª ØªÙØ¶Ù Ø§ÙØ§ÙØªØ²Ø§Ù Ø¨ÙÙÙ Ø§ÙØ¹ÙØ¯ Ø£Ù Ø¥Ø¯Ø§Ø±Ø© ÙØ®Ø§Ø·Ø±ØªÙ Ø¨Ø´ÙÙ Ø£ÙØ«Ø± ØªØ­ÙØ¸ÙØ§Ø ÙÙØ±Ø§Ø± Ø§ÙØ®Ø±ÙØ¬ ÙØ¹ÙØ¯ ÙÙ.
+⚠️ إذا كنت تفضل الالتزام بوقف العقد أو إدارة مخاطرتك بشكل أكثر تحفظًا، فقرار الخروج يعود لك.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`;
+⚠️ ليست توصية شراء أو بيع`;
 
   await sendSignalMessage(text);
 
@@ -876,18 +876,18 @@ async function finalizeTradeStop(key, trade, optionPrice, closeReason = 'SL') {
     side: trade.side,
     optionTicker: trade.optionTicker,
     contract: `${getContractDisplay(trade)}\n${trade.optionTicker || ''}`,
-    text: `ð ÙÙÙ ÙÙØ§Ø¦Ù ÙÙØµÙÙØ© â ST Decision
+    text: `🛑 وقف نهائي للصفقة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionStop)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-ð ØªÙ ØªØ£ÙÙØ¯ Ø§ÙÙÙÙ Ø§ÙÙÙØ§Ø¦Ù ÙØ¥ÙÙØ§Ù Ø§ÙÙØªØ§Ø¨Ø¹Ø©.`
+📌 تم تأكيد الوقف النهائي وإيقاف المتابعة.`
   });
 }
 
@@ -975,61 +975,61 @@ async function sendTargetHitMessage(trade, targetName, stockPrice, optionPrice) 
     ? `+$${fmtPrice(maxProfitAmount)}`
     : `-$${fmtPrice(Math.abs(maxProfitAmount))}`;
 
-  const profitIcon = profitAmount >= 0 ? 'ð' : 'ð';
+  const profitIcon = profitAmount >= 0 ? '📈' : '📉';
 
   const targetNote = profitAmount > 0
-    ? `ð ØªØ­ÙÙ ÙØ¯Ù Ø§ÙØ³ÙÙ ÙØ§ÙØ¹ÙØ¯ Ø­Ø§ÙÙØ§Ù ÙÙÙ Ø§ÙØ¯Ø®ÙÙ.
-ØªØ§Ø¨Ø¹ ÙÙÙÙ ÙÙØ§ ØªØ®ÙÙ Ø§ÙØ±Ø¨Ø­ ÙØªØ­ÙÙ Ø®Ø³Ø§Ø±Ø©.`
-    : `â ï¸ ØªØ­ÙÙ ÙØ¯Ù Ø§ÙØ³ÙÙØ ÙÙÙ Ø§ÙØ¹ÙØ¯ Ø­Ø§ÙÙØ§Ù Ø£ÙÙ ÙÙ Ø³Ø¹Ø± Ø§ÙØ¯Ø®ÙÙ.
-ÙØ§ ØªØ¹ØªØ¨Ø±ÙØ§ Ø±Ø¨Ø­ Ø­ØªÙ ÙØªØ­ÙÙ Ø§ÙØ¹ÙØ¯ ÙÙÙ Ø§ÙØ¯Ø®ÙÙ.`;
+    ? `📌 تحقق هدف السهم والعقد حالياً فوق الدخول.
+تابع وقفك ولا تخلي الربح يتحول خسارة.`
+    : `⚠️ تحقق هدف السهم، لكن العقد حالياً أقل من سعر الدخول.
+لا تعتبرها ربح حتى يتحول العقد فوق الدخول.`;
 
   const text = isFinal
-    ? `ð¯ð¥ ØªØ­ÙÙ Ø§ÙÙØ¯Ù Ø§ÙØ«Ø§ÙØ« â ST Decision
+    ? `🎯🔥 تحقق الهدف الثالث — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
+📊 السهم: ${trade.symbol}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-â ØªØ­ÙÙ: ${targetName}
+✅ تحقق: ${targetName}
 
-ð° Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(stockPrice)}
+💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
 
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
 
-${profitIcon} ÙØªÙØ¬Ø© Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙØ©:
+${profitIcon} نتيجة العقد الحالية:
 ${profitText}
 
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯:
+🔥 أعلى ربح وصل له العقد:
 ${maxProfitText}
 
-ââââââââââââââ
+━━━━━━━━━━━━━━
 
-ð ØªÙ ØªØ­ÙÙÙ Ø§ÙÙØ¯Ù Ø§ÙØ«Ø§ÙØ« Ø¨ÙØ¬Ø§Ø­.
+🚀 تم تحقيق الهدف الثالث بنجاح.
 
-ð Ø³ÙØªÙ Ø§Ø³ØªÙØ±Ø§Ø± ÙØªØ§Ø¨Ø¹Ø© Ø§ÙØ¹ÙØ¯ ÙÙÙØ³ØªÙØ±ÙÙ.
+📌 سيتم استمرار متابعة العقد للمستمرين.
 
-ð Ø³ÙØªÙ Ø¥Ø±Ø³Ø§Ù ØªØ­Ø¯ÙØ«Ø§Øª Ø¬Ø¯ÙØ¯Ø© Ø¹ÙØ¯ ØªØ³Ø¬ÙÙ ÙÙÙ Ø¬Ø¯ÙØ¯Ø© ÙÙØ¹ÙØ¯.
+🔄 سيتم إرسال تحديثات جديدة عند تسجيل قمم جديدة للعقد.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`
-    : `ð¯ ØªØ­ÙÙ ÙØ¯Ù Ø§ÙØ³ÙÙ ${targetName} â ST Decision
+⚠️ ليست توصية شراء أو بيع`
+    : `🎯 تحقق هدف السهم ${targetName} — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ð° Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(stockPrice)}
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-${profitIcon} ÙØªÙØ¬Ø© Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙØ©: ${profitText}
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯: ${maxProfitText}
+💰 سعر السهم الحالي: ${fmtPrice(stockPrice)}
+💵 سعر العقد الحالي: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+${profitIcon} نتيجة العقد الحالية: ${profitText}
+🔥 أعلى ربح وصل له العقد: ${maxProfitText}
 
 ${targetNote}
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`;
+⚠️ ليست توصية شراء أو بيع`;
 
   await sendSignalMessage(text);
 }
@@ -1048,40 +1048,40 @@ async function sendBetterStopMessage(trade, optionPrice) {
     : 0;
 
   if (high > entry) {
-    await sendSignalMessage(`ð¡ ØªÙØ¨ÙÙ ÙÙÙØ³ØªÙØ±ÙÙ â ST Decision
+    await sendSignalMessage(`🟡 تنبيه للمستمرين — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(entry)}
-ð Ø£Ø¹ÙÙ Ø³Ø¹Ø± ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(high)}
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ØªØ­ÙÙ: +$${fmtPrice(maxProfitAmount)}
-ð Ø£Ø¹ÙÙ ÙØ³Ø¨Ø© Ø±Ø¨Ø­: +${fmtPrice(maxProfitPct)}%
+💵 دخول العقد: ${fmtPrice(entry)}
+📈 أعلى سعر وصل له العقد: ${fmtPrice(high)}
+🔥 أعلى ربح تحقق: +$${fmtPrice(maxProfitAmount)}
+📊 أعلى نسبة ربح: +${fmtPrice(maxProfitPct)}%
 
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(current)}
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionStop)}
+💵 سعر العقد الحالي: ${fmtPrice(current)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-ð Ø§ÙØ¹ÙØ¯ Ø¹Ø§Ø¯ Ø§ÙØ¢Ù ØªØ­Øª Ø§ÙÙÙÙ ÙØªÙ Ø¥ÙÙØ§Ù Ø§ÙÙØªØ§Ø¨Ø¹Ø©.
-â Ø§ÙØµÙÙØ© Ø­ÙÙØª Ø±Ø¨Ø­ ÙØ¨Ù Ø§ÙØ±Ø¬ÙØ¹Ø ÙÙÙØ³Øª ØµÙÙØ© ÙØ§Ø´ÙØ©.
+📌 العقد عاد الآن تحت الوقف وتم إيقاف المتابعة.
+✅ الصفقة حققت ربح قبل الرجوع، وليست صفقة فاشلة.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`);
+⚠️ ليست توصية شراء أو بيع`);
     return;
   }
 
-  await sendSignalMessage(`ð Ø¶Ø±Ø¨ ÙÙÙ Ø§ÙØ¹ÙØ¯ â ST Decision
+  await sendSignalMessage(`🛑 ضرب وقف العقد — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(entry)}
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(current)}
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionStop)}
+💵 دخول العقد: ${fmtPrice(entry)}
+💵 سعر العقد الحالي: ${fmtPrice(current)}
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
 
-ð ØªÙ Ø¥ÙÙØ§Ù Ø§ÙÙØªØ§Ø¨Ø¹Ø©.`);
+📌 تم إيقاف المتابعة.`);
 }
 
 async function getFinnhubPrice(symbol) {
@@ -1335,11 +1335,11 @@ function parseRadar(text) {
     extractDominantExpiration(text);
 
   const buyers =
-    text.includes('Ø§ÙÙØ´ØªØ±ÙÙ') ||
+    text.includes('المشترون') ||
     text.includes('Ask Flow');
 
   const sellers =
-    text.includes('Ø§ÙØ¨Ø§Ø¦Ø¹ÙÙ') ||
+    text.includes('البائعون') ||
     text.includes('Bid Flow');
 
   return {
@@ -1390,49 +1390,49 @@ function canCreateDecision(gex, radar) {
   if (!isFresh(gex) || !isFresh(radar)) {
     return {
       ok: false,
-      reason: 'Ø§ÙØ¨ÙØ§ÙØ§Øª ØºÙØ± ÙØªØ²Ø§ÙÙØ©'
+      reason: 'البيانات غير متزامنة'
     };
   }
 
   if (!['CALL', 'PUT'].includes(gex.side)) {
     return {
       ok: false,
-      reason: 'Ø§ÙÙØ§ÙØ§ ÙØ§ ÙØ¹Ø·Ù Ø§ØªØ¬Ø§Ù ÙØ§Ø¶Ø­'
+      reason: 'القاما لا يعطي اتجاه واضح'
     };
   }
 
   if (!['CALL', 'PUT'].includes(radar.side)) {
     return {
       ok: false,
-      reason: 'Ø§ÙØ±Ø§Ø¯Ø§Ø± ÙØ§ ÙØ¹Ø·Ù Ø§ØªØ¬Ø§Ù ÙØ§Ø¶Ø­ Ø£Ù Ø®ÙØ§ØµØ© Ø§ÙØ±Ø§Ø¯Ø§Ø± ØªÙÙÙ Ø§ÙØªØ¸Ø±'
+      reason: 'الرادار لا يعطي اتجاه واضح أو خلاصة الرادار تقول انتظر'
     };
   }
 
   if (gex.symbol !== radar.symbol) {
     return {
       ok: false,
-      reason: `Ø§ÙØ´Ø±ÙØ© ÙØ®ØªÙÙØ©: GEX=${gex.symbol}, RADAR=${radar.symbol}`
+      reason: `الشركة مختلفة: GEX=${gex.symbol}, RADAR=${radar.symbol}`
     };
   }
 
   if (gex.side !== radar.side) {
     return {
       ok: false,
-      reason: `ØªØ¹Ø§Ø±Ø¶ Ø§ÙØ§ØªØ¬Ø§Ù: GEX=${gex.side}, RADAR=${radar.side}`
+      reason: `تعارض الاتجاه: GEX=${gex.side}, RADAR=${radar.side}`
     };
   }
 
   if ((gex.decisionScore || gex.score) < MIN_SCORE) {
     return {
       ok: false,
-      reason: `Score Ø¶Ø¹ÙÙ: ${gex.decisionScore || gex.score}/10`
+      reason: `Score ضعيف: ${gex.decisionScore || gex.score}/10`
     };
   }
 
   if (!gex.entry && !gex.readyText) {
     return {
       ok: false,
-      reason: 'ÙØ§ ÙÙØ¬Ø¯ ÙØ³ØªÙÙ Ø¯Ø®ÙÙ ÙØ§Ø¶Ø­ ÙÙØ§ Ø¥Ø´Ø§Ø±Ø© Ø¬Ø§ÙØ²Ø©'
+      reason: 'لا يوجد مستوى دخول واضح ولا إشارة جاهزة'
     };
   }
 
@@ -1444,7 +1444,7 @@ function canCreateDecision(gex, radar) {
   if (!gex.stop) {
     return {
       ok: false,
-      reason: 'ÙØ§ ÙÙØ¬Ø¯ ÙÙÙ ÙÙØ§ ÙÙÙÙ Ø­Ø³Ø§Ø¨ ÙÙÙ ØªÙÙØ§Ø¦Ù'
+      reason: 'لا يوجد وقف ولا يمكن حساب وقف تلقائي'
     };
   }
 
@@ -1455,13 +1455,13 @@ function canCreateDecision(gex, radar) {
   if (!gex.strike && !gex.entry && !gex.readyText) {
     return {
       ok: false,
-      reason: 'ÙØ§ ÙÙØ¬Ø¯ Ø³ØªØ±Ø§ÙÙ Ø£Ù Ø¯Ø®ÙÙ ÙØ§Ø¶Ø­'
+      reason: 'لا يوجد سترايك أو دخول واضح'
     };
   }
 
   return {
     ok: true,
-    reason: 'ØªÙØ§ÙÙ ÙØ§ÙÙ'
+    reason: 'توافق كامل'
   };
 }
 async function notifyAdminReject(symbol, reason) {
@@ -1469,7 +1469,7 @@ async function notifyAdminReject(symbol, reason) {
 
   bot.sendMessage(
     ADMIN_CHAT_ID,
-    `â ï¸ Ø±ÙØ¶ ÙØ±Ø§Ø± â ${symbol}\nØ§ÙØ³Ø¨Ø¨: ${reason}`
+    `⚠️ رفض قرار — ${symbol}\nالسبب: ${reason}`
   ).catch(() => {});
 }
 
@@ -1491,7 +1491,7 @@ async function createWatchSetup(symbol, gex, radar) {
     console.log(`OUTSIDE TRADING TIME - BLOCKED: ${symbol}`);
     await notifyAdminReject(
       symbol,
-      `Ø®Ø§Ø±Ø¬ ÙÙØª Ø§ÙØµÙÙØ§Øª Ø§ÙÙØ³ÙÙØ­: ${tradingTimeText()}`
+      `خارج وقت الصفقات المسموح: ${tradingTimeText()}`
     );
     return;
   }
@@ -1504,10 +1504,10 @@ async function createWatchSetup(symbol, gex, radar) {
     return;
   }
 
-  const expiration = radar.suggestedExpiration || 'ØºÙØ± ÙØªÙÙØ±';
+  const expiration = radar.suggestedExpiration || 'غير متوفر';
 
-  if (expiration === 'ØºÙØ± ÙØªÙÙØ±') {
-    const reason = 'ÙØ§ ÙÙØ¬Ø¯ Ø§ÙØªÙØ§Ø¡ ÙÙØªØ±Ø­ ÙÙ Ø§ÙØ±Ø§Ø¯Ø§Ø±';
+  if (expiration === 'غير متوفر') {
+    const reason = 'لا يوجد انتهاء مقترح من الرادار';
     console.log(`NO DECISION ${symbol}: ${reason}`);
     await notifyAdminReject(symbol, reason);
     return;
@@ -1519,7 +1519,7 @@ async function createWatchSetup(symbol, gex, radar) {
     currentPrice = await getFinnhubPrice(symbol);
   } catch (err) {
     console.error('FINNHUB PRICE ERROR:', symbol, err.message);
-    await notifyAdminReject(symbol, `Ø®Ø·Ø£ Ø³Ø¹Ø± Finnhub: ${err.message}`);
+    await notifyAdminReject(symbol, `خطأ سعر Finnhub: ${err.message}`);
     return;
   }
 
@@ -1537,7 +1537,7 @@ async function createWatchSetup(symbol, gex, radar) {
   }
 
   if (!gex.entry || !gex.strike) {
-    const reason = 'ÙØ§ ÙÙØ¬Ø¯ Ø¯Ø®ÙÙ Ø£Ù Ø³ØªØ±Ø§ÙÙ Ø¨Ø¹Ø¯ ÙØ­Øµ Ø§ÙØ³Ø¹Ø±';
+    const reason = 'لا يوجد دخول أو سترايك بعد فحص السعر';
     console.log(`NO DECISION ${symbol}: ${reason}`);
     await notifyAdminReject(symbol, reason);
     return;
@@ -1547,8 +1547,8 @@ async function createWatchSetup(symbol, gex, radar) {
 
   if (distancePct > MAX_ENTRY_DISTANCE_PCT) {
     const reason =
-      `Ø§ÙØ¯Ø®ÙÙ Ø¨Ø¹ÙØ¯ Ø¹Ù Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ: ${distancePct.toFixed(2)}% ` +
-      `(Ø§ÙØ­Ø¯ ${MAX_ENTRY_DISTANCE_PCT}%)`;
+      `الدخول بعيد عن السعر الحالي: ${distancePct.toFixed(2)}% ` +
+      `(الحد ${MAX_ENTRY_DISTANCE_PCT}%)`;
 
     console.log(`NO DECISION ${symbol}: ${reason}`);
     await notifyAdminReject(symbol, reason);
@@ -1575,8 +1575,8 @@ async function createWatchSetup(symbol, gex, radar) {
     optionData.mid > MAX_CONTRACT_PRICE
   ) {
     const reason =
-      `ÙØ§ ÙÙØ¬Ø¯ Ø¹ÙØ¯ Ø¯Ø§Ø®Ù Ø§ÙÙØ·Ø§Ù ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}. ` +
-      `Ø§ÙØ³Ø¹Ø± Ø§ÙÙØªÙÙØ±: ${fmtPrice(optionData?.mid)}`;
+      `لا يوجد عقد داخل النطاق ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}. ` +
+      `السعر المتوفر: ${fmtPrice(optionData?.mid)}`;
 
     console.log(`NO CONTRACT IN PRICE RANGE ${symbol}:`, optionData?.mid || 'NA');
     await notifyAdminReject(symbol, reason);
@@ -1673,74 +1673,74 @@ async function createWatchSetup(symbol, gex, radar) {
 }
 
 async function sendWatchMessage(setup, gex, radar) {
-  const sideEmoji = setup.side === 'CALL' ? 'ð¢' : 'ð´';
-  const sideArabic = setup.side === 'CALL' ? 'ÙÙÙ' : 'Ø¨ÙØª';
+  const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
+  const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
 
   const contractText = getContractDisplay(setup);
 
   const activationText =
     setup.side === 'CALL'
-      ? `Ø§Ø®ØªØ±Ø§Ù ${setup.entry} ÙØ§ÙØ«Ø¨Ø§Øª ÙÙÙÙ`
-      : `ÙØ³Ø± ${setup.entry} ÙØ§ÙØ«Ø¨Ø§Øª ØªØ­ØªÙ`;
+      ? `اختراق ${setup.entry} والثبات فوقه`
+      : `كسر ${setup.entry} والثبات تحته`;
 
   const stopNote = setup.autoStop
-    ? 'ÙÙÙ ØªÙÙØ§Ø¦Ù ÙØ­Ø³ÙØ¨ ÙØ£Ù Ø±Ø³Ø§ÙØ© Ø§ÙÙØ§ÙØ§ ÙØ§ ØªØ­ØªÙÙ ÙÙÙ ÙØ§Ø¶Ø­'
-    : 'ÙÙÙ ÙÙ Ø±Ø³Ø§ÙØ© Ø§ÙÙØ§ÙØ§';
+    ? 'وقف تلقائي محسوب لأن رسالة القاما لا تحتوي وقف واضح'
+    : 'وقف من رسالة القاما';
 
-  const text = `ð¨ ØµÙÙØ© ÙØ±Ø§ÙØ¨Ø© â ST Decision
+  const text = `🚨 صفقة مراقبة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${setup.symbol}
-${sideEmoji} Ø§ÙÙÙØ¹: ${sideArabic}
-ð Ø§ÙØ§ÙØªÙØ§Ø¡: ${setup.expiration}
+📊 السهم: ${setup.symbol}
+${sideEmoji} النوع: ${sideArabic}
+📅 الانتهاء: ${setup.expiration}
 
-ð¯ Ø§ÙØ¹ÙØ¯ Ø§ÙÙØ®ØªØ§Ø±:
+🎯 العقد المختار:
 ${contractText}
 ${setup.optionTicker}
 
-ð° Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(setup.currentPrice)}
+💰 سعر السهم الحالي: ${fmtPrice(setup.currentPrice)}
 
 ${setup.autoStop
-  ? `ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ ÙÙØª Ø§ÙØ§Ø®ØªÙØ§Ø±: ${fmtPrice(setup.optionEntry)}
-ð ÙÙÙ Ø§Ø­ØªÙØ§Ø·Ù ÙÙØ¹ÙØ¯ Ø§Ø°Ø§ ÙÙ ÙÙÙ ÙÙØ§Ù ÙÙÙ ÙØ§ÙØ§: ${fmtPrice(setup.optionStop)}`
-  : `ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ ÙÙØª Ø§ÙØ§Ø®ØªÙØ§Ø±: ${fmtPrice(setup.optionEntry)}`}
+  ? `💵 سعر العقد وقت الاختيار: ${fmtPrice(setup.optionEntry)}
+🛑 وقف احتياطي للعقد اذا لم يكن هناك وقف قاما: ${fmtPrice(setup.optionStop)}`
+  : `💵 سعر العقد وقت الاختيار: ${fmtPrice(setup.optionEntry)}`}
 
-ð Ø§ÙØªÙØ¹ÙÙ:
+📍 التفعيل:
 ${activationText}
 
-ð¯ Ø£ÙØ¯Ø§Ù Ø§ÙØ³ÙÙ:
-TP1: ${setup.tp1 || 'ØºÙØ± ÙØªÙÙØ±'}
-TP2: ${setup.tp2 || 'ØºÙØ± ÙØªÙÙØ±'}
-TP3: ${setup.tp3 || 'ØºÙØ± ÙØªÙÙØ±'}
+🎯 أهداف السهم:
+TP1: ${setup.tp1 || 'غير متوفر'}
+TP2: ${setup.tp2 || 'غير متوفر'}
+TP3: ${setup.tp3 || 'غير متوفر'}
 
-ð ÙÙÙ Ø§ÙØ³ÙÙ:
+🛑 وقف السهم:
 ${fmtPrice(setup.stop)}
-ð ÙÙØ¹ Ø§ÙÙÙÙ: ${stopNote}
+📌 نوع الوقف: ${stopNote}
 
-ââââââââââââââ
-ð Ø¨ÙØ§ÙØ§Øª Ø§ÙØ¹ÙØ¯
+━━━━━━━━━━━━━━
+📊 بيانات العقد
 
 Bid: ${fmtPrice(setup.optionBid)}
 Ask: ${fmtPrice(setup.optionAsk)}
 Last: ${fmtPrice(setup.optionLast)}
 OI: ${fmtNum(setup.optionOi)}
 Volume: ${fmtNum(setup.optionVolume)}
-Delta: ${setup.optionDelta ?? 'ØºÙØ± ÙØªÙÙØ±'}
-Gamma: ${setup.optionGamma ?? 'ØºÙØ± ÙØªÙÙØ±'}
+Delta: ${setup.optionDelta ?? 'غير متوفر'}
+Gamma: ${setup.optionGamma ?? 'غير متوفر'}
 
-ââââââââââââââ
-ð Ø³Ø¨Ø¨ Ø§ÙØµÙÙØ©
+━━━━━━━━━━━━━━
+📊 سبب الصفقة
 
-â GEX: ${setup.side} BIAS
-â Score Ø§ÙÙØ§ÙØ§: ${setup.baseScore} / 10
-â Ø¯Ø¹Ù Ø§ÙØ¬Ø§ÙØ§ Ø£Ø¶Ø§Ù: +${setup.gammaSupportBonus}
-â Score Ø§ÙÙØ±Ø§Ø±: ${setup.score} / 10
-â Radar: ${radar.side}
-â Ø§ÙØªÙØ§Ø¡ ÙÙØªØ±Ø­/ÙØ³ÙØ·Ø±: ${setup.expiration}
+✅ GEX: ${setup.side} BIAS
+✅ Score القاما: ${setup.baseScore} / 10
+✅ دعم الجاما أضاف: +${setup.gammaSupportBonus}
+✅ Score القرار: ${setup.score} / 10
+✅ Radar: ${radar.side}
+✅ انتهاء مقترح/مسيطر: ${setup.expiration}
 
-â³ Ø§ÙØ­Ø§ÙØ©:
-ÙØ±Ø§ÙØ¨Ø© ÙÙØ· â ÙÙ ØªØªÙØ¹Ù Ø¨Ø¹Ø¯
+⏳ الحالة:
+مراقبة فقط — لم تتفعل بعد
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`;
+⚠️ ليست توصية شراء أو بيع`;
 
   await sendSignalMessage(text);
 }
@@ -1753,14 +1753,14 @@ async function sendActivatedMessage(setup, price) {
 
     await notifyAdminReject(
       setup.symbol,
-      `ØªÙ ÙÙØ¹ Ø§ÙØªÙØ¹ÙÙ Ø®Ø§Ø±Ø¬ ÙÙØª Ø§ÙØµÙÙØ§Øª Ø§ÙÙØ³ÙÙØ­: ${tradingTimeText()}`
+      `تم منع التفعيل خارج وقت الصفقات المسموح: ${tradingTimeText()}`
     );
 
     return;
   }
 
-  const sideEmoji = setup.side === 'CALL' ? 'ð¢' : 'ð´';
-  const sideArabic = setup.side === 'CALL' ? 'ÙÙÙ' : 'Ø¨ÙØª';
+  const sideEmoji = setup.side === 'CALL' ? '🟢' : '🔴';
+  const sideArabic = setup.side === 'CALL' ? 'كول' : 'بوت';
 
   let optionData = null;
 
@@ -1826,23 +1826,23 @@ async function sendActivatedMessage(setup, price) {
 
       await closeActiveTradeInDb(setup.key, 'CANCELLED_PRICE_RANGE');
 
-      await sendSignalMessage(`â ØªÙ Ø¥ÙØºØ§Ø¡ ØªÙØ¹ÙÙ Ø§ÙØµÙÙØ© â ST Decision
+      await sendSignalMessage(`❌ تم إلغاء تفعيل الصفقة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${setup.symbol}
-Ø§ÙÙÙØ¹: ${sideArabic}
-ð Ø§ÙØ§ÙØªÙØ§Ø¡: ${setup.expiration}
+📊 السهم: ${setup.symbol}
+النوع: ${sideArabic}
+📅 الانتهاء: ${setup.expiration}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${oldContractText}
-${oldOptionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
+${oldOptionTicker || 'غير متوفر'}
 
-ðµ Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(oldOptionPrice)}
+💵 سعر العقد الحالي: ${fmtPrice(oldOptionPrice)}
 
-ð Ø§ÙØ³Ø¨Ø¨:
-Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø®Ø±Ø¬ Ø¹Ù Ø§ÙÙØ·Ø§Ù Ø§ÙÙØ·ÙÙØ¨ ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}
-ÙÙÙ ÙØªÙ Ø§ÙØ¹Ø«ÙØ± Ø¹ÙÙ Ø¹ÙØ¯ Ø¨Ø¯ÙÙ ÙÙØ§Ø³Ø¨ Ø¯Ø§Ø®Ù Ø§ÙÙØ·Ø§Ù.
+📌 السبب:
+سعر العقد خرج عن النطاق المطلوب ${MIN_CONTRACT_PRICE} - ${MAX_CONTRACT_PRICE}
+ولم يتم العثور على عقد بديل مناسب داخل النطاق.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`);
+⚠️ ليست توصية شراء أو بيع`);
 
       return;
     }
@@ -1877,59 +1877,59 @@ ${oldOptionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
   await saveActiveTradeToDb(setup);
   await saveTradeHistoryOpen(setup);
 
-  const stopNote = setup.autoStop ? 'ÙÙÙ ØªÙÙØ§Ø¦Ù ÙØ­Ø³ÙØ¨' : 'ÙÙÙ ÙÙ Ø±Ø³Ø§ÙØ© Ø§ÙÙØ§ÙØ§';
+  const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
 
   const strikeChangedNote = strikeChanged
     ? `
 
-â ï¸ ØªÙØ¨ÙÙ ÙÙÙ
+⚠️ تنبيه مهم
 
-ØªÙ ØªØºÙÙØ± Ø§ÙØ¹ÙØ¯ Ø£Ø«ÙØ§Ø¡ Ø§ÙØªÙØ¹ÙÙ ÙØ£Ù Ø§ÙØ¹ÙØ¯ Ø§ÙØ£ØµÙÙ ØªØ¬Ø§ÙØ² Ø§ÙØ­Ø¯ Ø§ÙØ³Ø¹Ø±Ù Ø§ÙÙØ³ÙÙØ­.
+تم تغيير العقد أثناء التفعيل لأن العقد الأصلي تجاوز الحد السعري المسموح.
 
-Ø§ÙØ¹ÙØ¯ Ø§ÙØ£ØµÙÙ:
+العقد الأصلي:
 ${oldContractText}
-${oldOptionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
-Ø³Ø¹Ø±Ù ÙÙØª Ø§ÙØªÙØ¹ÙÙ: ${fmtPrice(oldOptionPrice)}
+${oldOptionTicker || 'غير متوفر'}
+سعره وقت التفعيل: ${fmtPrice(oldOptionPrice)}
 
-Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ:
+العقد الحالي:
 ${getContractDisplay(setup)}
-${setup.optionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
+${setup.optionTicker || 'غير متوفر'}
 
-â ØªÙ Ø§Ø¹ØªÙØ§Ø¯ Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø§ÙÙ ÙÙÙØªØ§Ø¨Ø¹Ø©.
+✅ تم اعتماد العقد الحالي للمتابعة.
 
-ââââââââââââââ`
+━━━━━━━━━━━━━━`
     : '';
 
-  const text = `â ØªÙ ØªÙØ¹ÙÙ Ø§ÙØµÙÙØ© â ST Decision
+  const text = `✅ تم تفعيل الصفقة — ST Decision
 ${strikeChangedNote}
 
-ð Ø§ÙØ³ÙÙ: ${setup.symbol}
-${sideEmoji} Ø§ÙÙÙØ¹: ${sideArabic}
-ð Ø§ÙØ§ÙØªÙØ§Ø¡: ${setup.expiration}
+📊 السهم: ${setup.symbol}
+${sideEmoji} النوع: ${sideArabic}
+📅 الانتهاء: ${setup.expiration}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(setup)}
-${setup.optionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
+${setup.optionTicker || 'غير متوفر'}
 
-ð° Ø³Ø¹Ø± Ø§ÙØ³ÙÙ Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(price)}
-ð ÙØ³ØªÙÙ Ø§ÙØ¯Ø®ÙÙ: ${fmtPrice(setup.entry)}
+💰 سعر السهم الحالي: ${fmtPrice(price)}
+📍 مستوى الدخول: ${fmtPrice(setup.entry)}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(optionEntry)}
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(optionStop)}
-ð ÙÙÙ Ø§ÙØ³ÙÙ: ${fmtPrice(setup.stop)}
-ð ÙÙØ¹ Ø§ÙÙÙÙ: ${stopNote}
+💵 دخول العقد: ${fmtPrice(optionEntry)}
+🛑 وقف العقد: ${fmtPrice(optionStop)}
+🛑 وقف السهم: ${fmtPrice(setup.stop)}
+📌 نوع الوقف: ${stopNote}
 
-ð¯ Ø£ÙØ¯Ø§Ù Ø§ÙØ³ÙÙ:
-TP1: ${setup.tp1 || 'ØºÙØ± ÙØªÙÙØ±'}
-TP2: ${setup.tp2 || 'ØºÙØ± ÙØªÙÙØ±'}
-TP3: ${setup.tp3 || 'ØºÙØ± ÙØªÙÙØ±'}
+🎯 أهداف السهم:
+TP1: ${setup.tp1 || 'غير متوفر'}
+TP2: ${setup.tp2 || 'غير متوفر'}
+TP3: ${setup.tp3 || 'غير متوفر'}
 
-ð¦ OI: ${fmtNum(setup.optionOi)}
-ð Volume: ${fmtNum(setup.optionVolume)}
+📦 OI: ${fmtNum(setup.optionOi)}
+📊 Volume: ${fmtNum(setup.optionVolume)}
 
-ð Ø³ÙØªÙ Ø¥Ø±Ø³Ø§Ù ØªØ­Ø¯ÙØ« ÙÙÙØ§ Ø§Ø±ØªÙØ¹ Ø§ÙØ¹ÙØ¯ +${CONTRACT_UPDATE_STEP.toFixed(2)}
+🔔 سيتم إرسال تحديث كلما ارتفع العقد +${CONTRACT_UPDATE_STEP.toFixed(2)}
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`;
+⚠️ ليست توصية شراء أو بيع`;
 
   await sendSignalMessage(text);
 
@@ -1944,17 +1944,17 @@ await sendUnifiedPrivateAlert({
   
 }
 async function sendCancelledMessage(setup, price, reason) {
-  const text = `â ØªÙ Ø¥ÙØºØ§Ø¡ ØµÙÙØ© Ø§ÙÙØ±Ø§ÙØ¨Ø© â ST Decision
+  const text = `❌ تم إلغاء صفقة المراقبة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${setup.symbol}
-Ø§ÙÙÙØ¹: ${setup.side}
-ð° Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(price)}
+📊 السهم: ${setup.symbol}
+النوع: ${setup.side}
+💰 السعر الحالي: ${fmtPrice(price)}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(setup)}
-${setup.optionTicker || 'ØºÙØ± ÙØªÙÙØ±'}
+${setup.optionTicker || 'غير متوفر'}
 
-ð Ø§ÙØ³Ø¨Ø¨:
+📌 السبب:
 ${reason}`;
 
   await sendSignalMessage(text);
@@ -2090,8 +2090,8 @@ async function loadActiveTradesFromDb() {
         createdAt: row.created_at ? new Date(row.created_at).getTime() : now()
       };
 
-      // Ø­ÙØ§ÙØ© ÙÙØµÙÙØ§Øª Ø§ÙÙØ¯ÙÙØ©: Ø¥Ø°Ø§ ÙÙ ÙÙÙ ÙÙØ§Ù ÙÙÙ Ø³ÙÙ ÙØ­ÙÙØ¸Ø
-      // ÙØªÙ Ø¥ÙØ´Ø§Ø¡ ÙÙÙ ØªÙÙØ§Ø¦Ù ÙÙ ÙØ³ØªÙÙ Ø§ÙØ¯Ø®ÙÙ ÙØ­ÙØ¸Ù ÙÙ Supabase.
+      // حماية للصفقات القديمة: إذا لم يكن هناك وقف سهم محفوظ،
+      // يتم إنشاء وقف تلقائي من مستوى الدخول وحفظه في Supabase.
       if (!trade.stop && trade.entry && ['CALL', 'PUT'].includes(trade.side)) {
         trade.stop = buildAutoStop(trade.entry, trade.side);
         trade.autoStop = true;
@@ -2114,7 +2114,7 @@ async function loadActiveTradesFromDb() {
       sentSetupKeys.add(trade.key);
     }
 
-    console.log(`â LOADED ACTIVE TRADES FROM DB: ${activeTrades.size}`);
+    console.log(`✅ LOADED ACTIVE TRADES FROM DB: ${activeTrades.size}`);
   } catch (err) {
     console.error('LOAD ACTIVE TRADES DB ERROR:', err.message);
   }
@@ -2359,7 +2359,7 @@ async function monitorSetups() {
         await sendCancelledMessage(
           setup,
           setup.currentPrice,
-          'Ø§ÙØªÙØª ÙØ¯Ø© Ø§ÙÙØ±Ø§ÙØ¨Ø© Ø¨Ø¯ÙÙ ØªÙØ¹ÙÙ'
+          'انتهت مدة المراقبة بدون تفعيل'
         );
 
         continue;
@@ -2452,25 +2452,25 @@ async function monitorActiveTrades() {
 
           await closeTradeHistory(trade, 'EXPIRED_AFTER_TP3', optionPrice);
 
-          await sendSignalMessage(`ð Ø§ÙØªÙØ§Ø¡ ÙØªØ§Ø¨Ø¹Ø© Ø§ÙØµÙÙØ© â ST Decision
+          await sendSignalMessage(`📅 انتهاء متابعة الصفقة — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
+📊 السهم: ${trade.symbol}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-â ØªÙ ØªØ­ÙÙÙ Ø§ÙÙØ¯Ù Ø§ÙØ«Ø§ÙØ« Ø³Ø§Ø¨ÙØ§Ù
+✅ تم تحقيق الهدف الثالث سابقاً
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø¢Ø®Ø± Ø³Ø¹Ø± ÙÙØ¹ÙØ¯: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 آخر سعر للعقد: ${fmtPrice(optionPrice)}
 
-ð¥ Ø£Ø¹ÙÙ Ø³Ø¹Ø± ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionHigh)}
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ØªØ­ÙÙ: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
+🔥 أعلى سعر وصل له العقد: ${fmtPrice(trade.optionHigh)}
+🔥 أعلى ربح تحقق: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
 
-ð ØªÙ Ø¥ØºÙØ§Ù Ø§ÙÙØªØ§Ø¨Ø¹Ø© Ø¨Ø³Ø¨Ø¨ Ø§ÙØªÙØ§Ø¡ ØªØ§Ø±ÙØ® Ø§ÙØ¹ÙØ¯.
+📌 تم إغلاق المتابعة بسبب انتهاء تاريخ العقد.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`);
+⚠️ ليست توصية شراء أو بيع`);
 
           continue;
         }
@@ -2489,25 +2489,25 @@ ${trade.optionTicker}
 
           await closeTradeHistory(trade, 'TP3_PROTECT_20', optionPrice);
 
-          await sendSignalMessage(`ð¡ ØªÙØ¨ÙÙ ÙÙÙØ³ØªÙØ±ÙÙ â ST Decision
+          await sendSignalMessage(`🟡 تنبيه للمستمرين — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
+📊 السهم: ${trade.symbol}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 السعر الحالي: ${fmtPrice(optionPrice)}
 
-ð¥ Ø£Ø¹ÙÙ Ø³Ø¹Ø± ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionHigh)}
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ØªØ­ÙÙ: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
+🔥 أعلى سعر وصل له العقد: ${fmtPrice(trade.optionHigh)}
+🔥 أعلى ربح تحقق: +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
 
-ð Ø¹Ø§Ø¯ Ø§ÙØ¹ÙØ¯ ÙÙÙØ·ÙØ© Ø§ÙØ­ÙØ§ÙØ© Ø§ÙÙØ­Ø¯Ø¯Ø©.
+📌 عاد العقد لمنطقة الحماية المحددة.
 
-â Ø£ÙØµØ­ Ø¨Ø§ÙØ®Ø±ÙØ¬ ÙÙÙØ³ØªÙØ±ÙÙ.
+✅ أنصح بالخروج للمستمرين.
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`);
+⚠️ ليست توصية شراء أو بيع`);
 
           continue;
         }
@@ -2520,7 +2520,7 @@ ${trade.optionTicker}
           continue;
         }
       } else if (trade.optionStopBreached && trade.stopReviewStatus === 'CONTINUING') {
-        // Ø§ÙØ¹ÙØ¯ ØªØ¹Ø§ÙÙ ÙÙÙ Ø§ÙÙÙÙØ ÙÙØ¨ÙÙ Ø³Ø¬Ù Ø§ÙÙØ±Ø§Ø¬Ø¹Ø© ÙØ­ÙÙØ¸ÙØ§ Ø¯ÙÙ ØªÙØ±Ø§Ø± Ø§ÙØ±Ø³Ø§ÙØ©.
+        // العقد تعافى فوق الوقف، ونبقي سجل المراجعة محفوظًا دون تكرار الرسالة.
         trade.nextStopReviewAt = 0;
         await saveActiveTradeToDb(trade);
       }
@@ -2534,51 +2534,51 @@ ${trade.optionTicker}
         await updateTradeHigh(trade);
 
         if (trade.tp3Hit) {
-          await sendSignalMessage(`ð ÙÙØ© Ø¬Ø¯ÙØ¯Ø© ÙÙØ¹ÙØ¯ â ST Decision
+          await sendSignalMessage(`🚀 قمة جديدة للعقد — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
+📊 السهم: ${trade.symbol}
 
-ð¯ Ø§ÙØ¹ÙØ¯:
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 السعر الحالي: ${fmtPrice(optionPrice)}
 
-ð¥ Ø£Ø¹ÙÙ Ø³Ø¹Ø± ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯:
+🔥 أعلى سعر وصل له العقد:
 ${fmtPrice(trade.optionHigh)}
 
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ØªØ­ÙÙ:
+🔥 أعلى ربح تحقق:
 +$${fmtPrice((Number(trade.optionHigh || 0) - Number(trade.optionEntry || 0)) * 100 * CONTRACT_QTY)}
 
-â ØªÙ ØªØ­ÙÙÙ Ø§ÙÙØ¯Ù Ø§ÙØ«Ø§ÙØ« ÙØ³Ø¨ÙØ§Ù
+✅ تم تحقيق الهدف الثالث مسبقاً
 
-ð ØªÙ ØªØ³Ø¬ÙÙ ÙÙØ© Ø¬Ø¯ÙØ¯Ø© ÙÙØ¹ÙØ¯
-ð Ø§ÙÙØªØ§Ø¨Ø¹Ø© ÙØ³ØªÙØ±Ø© ÙÙÙØ³ØªÙØ±ÙÙ
+📈 تم تسجيل قمة جديدة للعقد
+📌 المتابعة مستمرة للمستمرين
 
-â ï¸ ÙÙØ³Øª ØªÙØµÙØ© Ø´Ø±Ø§Ø¡ Ø£Ù Ø¨ÙØ¹`);
+⚠️ ليست توصية شراء أو بيع`);
         } else {
-          await sendSignalMessage(`ð ØªØ­Ø¯ÙØ« Ø§ÙØ¹ÙØ¯ â ST Decision
+          await sendSignalMessage(`📈 تحديث العقد — ST Decision
 
-ð Ø§ÙØ³ÙÙ: ${trade.symbol}
-ð¯ Ø§ÙØ¹ÙØ¯:
+📊 السهم: ${trade.symbol}
+🎯 العقد:
 ${getContractDisplay(trade)}
 ${trade.optionTicker}
 
-ðµ Ø¯Ø®ÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionEntry)}
-ðµ Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ: ${fmtPrice(optionPrice)}
-ð Ø£Ø¹ÙÙ Ø³Ø¹Ø± ÙØµÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionHigh)}
-â Ø§ÙØ±Ø¨Ø­ Ø§ÙØ­Ø§ÙÙ: +${fmtPrice(optionPrice - trade.optionEntry)}
-ð¥ Ø£Ø¹ÙÙ Ø±Ø¨Ø­ ÙØµÙ ÙÙ Ø§ÙØ¹ÙØ¯: +${fmtPrice(trade.optionHigh - trade.optionEntry)}
+💵 دخول العقد: ${fmtPrice(trade.optionEntry)}
+💵 السعر الحالي: ${fmtPrice(optionPrice)}
+📈 أعلى سعر وصله العقد: ${fmtPrice(trade.optionHigh)}
+✅ الربح الحالي: +${fmtPrice(optionPrice - trade.optionEntry)}
+🔥 أعلى ربح وصل له العقد: +${fmtPrice(trade.optionHigh - trade.optionEntry)}
 
-ð¯ Ø­Ø§ÙØ© Ø§ÙØ£ÙØ¯Ø§Ù:
-TP1: ${trade.tp1Hit ? 'â ØªØ­ÙÙ' : 'â³ ÙÙ ÙØªØ­ÙÙ'}
-TP2: ${trade.tp2Hit ? 'â ØªØ­ÙÙ' : 'â³ ÙÙ ÙØªØ­ÙÙ'}
-TP3: ${trade.tp3Hit ? 'â ØªØ­ÙÙ' : 'â³ ÙÙ ÙØªØ­ÙÙ'}
+🎯 حالة الأهداف:
+TP1: ${trade.tp1Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
+TP2: ${trade.tp2Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
+TP3: ${trade.tp3Hit ? '✅ تحقق' : '⏳ لم يتحقق'}
 
-ð ÙÙÙ Ø§ÙØ¹ÙØ¯: ${fmtPrice(trade.optionStop)}
-ð¦ OI: ${fmtNum(trade.optionOi)}
-ð Volume: ${fmtNum(trade.optionVolume)}`);
+🛑 وقف العقد: ${fmtPrice(trade.optionStop)}
+📦 OI: ${fmtNum(trade.optionOi)}
+📊 Volume: ${fmtNum(trade.optionVolume)}`);
         }
       }
     } catch (err) {
@@ -2619,81 +2619,81 @@ bot.on('message', async (msg) => {
     if (text === '/ping') {
       return bot.sendMessage(
         msg.chat.id,
-        'â ST Decision Bot ÙØ¹ÙÙ ÙÙÙØ±Ø£ Ø§ÙÙØ¬ÙÙØ¹Ø©',
+        '✅ ST Decision Bot يعمل ويقرأ المجموعة',
         msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}
       );
     }
 
     if (text === '/status' || text === '/botstatus') {
-      const gexList = recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'ÙØ§ ÙÙØ¬Ø¯';
-      const radarList = recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'ÙØ§ ÙÙØ¬Ø¯';
+      const gexList = recentGexMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
+      const radarList = recentRadarMessages.map(x => `${x.symbol}:${x.side}`).join(' | ') || 'لا يوجد';
 
       return bot.sendMessage(
         msg.chat.id,
-        `ð Ø­Ø§ÙØ© ST Decision Bot
+        `📊 حالة ST Decision Bot
 
-â ÙØ¹ÙÙ
+✅ يعمل
 
-Ø¢Ø®Ø± Ø´Ø±ÙØ§Øª Ø§ÙÙØ§ÙØ§:
+آخر شركات القاما:
 ${gexList}
 
-Ø¢Ø®Ø± Ø´Ø±ÙØ§Øª Ø§ÙØ±Ø§Ø¯Ø§Ø±:
+آخر شركات الرادار:
 ${radarList}
 
-ØµÙÙØ§Øª Ø§ÙÙØ±Ø§ÙØ¨Ø©: ${activeSetups.size}
-Ø§ÙØµÙÙØ§Øª Ø§ÙÙÙØ¹ÙØ©: ${activeTrades.size}
+صفقات المراقبة: ${activeSetups.size}
+الصفقات المفعلة: ${activeTrades.size}
 
-Ø¹Ø¯Ø¯ Ø§ÙØ´Ø±ÙØ§Øª Ø§ÙÙØ­ÙÙØ¸Ø© ÙÙ ÙÙ ÙØµØ¯Ø±:
+عدد الشركات المحفوظة من كل مصدر:
 ${HISTORY_LIMIT}
 
-ÙØ§ÙØ°Ø© Ø§ÙÙØ·Ø§Ø¨ÙØ©:
-${Math.round(MATCH_WINDOW_MS / 60000)} Ø¯ÙÙÙØ©
+نافذة المطابقة:
+${Math.round(MATCH_WINDOW_MS / 60000)} دقيقة
 
-Ø£ÙÙ Score:
+أقل Score:
 ${MIN_SCORE} / 10
 
-ÙØ·Ø§Ù Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯:
-${MIN_CONTRACT_PRICE} Ø¥ÙÙ ${MAX_CONTRACT_PRICE}
+نطاق سعر العقد:
+${MIN_CONTRACT_PRICE} إلى ${MAX_CONTRACT_PRICE}
 
-Ø£ÙØµÙ Ø¨ÙØ¹Ø¯ ÙÙØ¯Ø®ÙÙ Ø¹Ù Ø§ÙØ³Ø¹Ø± Ø§ÙØ­Ø§ÙÙ:
+أقصى بُعد للدخول عن السعر الحالي:
 ${MAX_ENTRY_DISTANCE_PCT}%
 
-ÙÙØª Ø§ÙØµÙÙØ§Øª Ø§ÙÙØ³ÙÙØ­:
+وقت الصفقات المسموح:
 ${tradingTimeText()}
 
-Ø­Ø§ÙØ© Ø§ÙÙÙØª Ø§ÙØ¢Ù:
-${isDecisionTradingTime() ? 'â Ø¯Ø§Ø®Ù ÙÙØª Ø§ÙØµÙÙØ§Øª' : 'â Ø®Ø§Ø±Ø¬ ÙÙØª Ø§ÙØµÙÙØ§Øª'}
+حالة الوقت الآن:
+${isDecisionTradingTime() ? '✅ داخل وقت الصفقات' : '⛔ خارج وقت الصفقات'}
 
-Ø·Ø±ÙÙØ© ÙÙØ¹ Ø§ÙØªÙØ±Ø§Ø±:
-ÙÙÙØ¹ ØªÙØ±Ø§Ø± ÙÙØ³ Ø§ÙØ´Ø±ÙØ© ÙÙÙØ³ Ø§ÙØ§ØªØ¬Ø§Ù.
-ÙØ«Ø§Ù: TSLA CALL ÙØ§ ÙØªÙØ±Ø± Ø­ØªÙ ÙÙ ØªØºÙØ± Ø§ÙØ³ØªØ±Ø§ÙÙ.
+طريقة منع التكرار:
+يمنع تكرار نفس الشركة ونفس الاتجاه.
+مثال: TSLA CALL لا يتكرر حتى لو تغير السترايك.
 
-Ø­ÙØ¸ Ø§ÙØµÙÙØ§Øª:
-Ø§ÙØµÙÙØ§Øª Ø§ÙÙÙØ¹ÙØ© ØªØ­ÙØ¸ ÙÙ Supabase ÙØªØ¹ÙØ¯ Ø¨Ø¹Ø¯ Restart Ø£Ù Deploy.
-ÙØ§ÙØµÙÙØ§Øª ØªØ­ÙØ¸ ÙÙ decision_trade_history ÙØ¹ trade_uid ÙØ±ÙØ¯ ÙÙÙ ØµÙÙØ© Ø­ØªÙ ÙØ§ ÙØªÙ Ø§Ø³ØªØ¨Ø¯Ø§Ù Ø§ÙØ¹ÙÙØ¯ Ø§ÙÙØªÙØ±Ø±Ø©.
-ÙØ§ÙØ¥Ø­ØµØ§Ø¦ÙØ§Øª Ø§ÙØ£Ø³Ø¨ÙØ¹ÙØ© ØªØ­ÙØ¸ ÙÙ decision_weekly_stats.
+حفظ الصفقات:
+الصفقات المفعلة تحفظ في Supabase وتعود بعد Restart أو Deploy.
+والصفقات تحفظ في decision_trade_history مع trade_uid فريد لكل صفقة حتى لا يتم استبدال العقود المتكررة.
+والإحصائيات الأسبوعية تحفظ في decision_weekly_stats.
 
-ÙØªØ§Ø¨Ø¹Ø© Ø§ÙØ£ÙØ¯Ø§Ù:
-Ø§ÙØ¨ÙØª ÙØ±Ø§ÙØ¨ TP1 Ù TP2 Ù TP3 Ø¹ÙÙ Ø³Ø¹Ø± Ø§ÙØ³ÙÙ.
-Ø¥Ø°Ø§ ØªØ­ÙÙ TP3 ØªØ³ØªÙØ± Ø§ÙÙØªØ§Ø¨Ø¹Ø© ÙÙÙØ³ØªÙØ±ÙÙ ÙÙØªÙ Ø¥Ø±Ø³Ø§Ù ØªØ­Ø¯ÙØ«Ø§Øª Ø¹ÙØ¯ ØªØ³Ø¬ÙÙ ÙÙÙ Ø¬Ø¯ÙØ¯Ø© ÙÙØ¹ÙØ¯.
-Ø¥Ø°Ø§ Ø¹Ø§Ø¯ Ø§ÙØ¹ÙØ¯ ÙÙÙØ·ÙØ© Ø§ÙØ­ÙØ§ÙØ© Ø¨Ø¹Ø¯ TP3 ÙØªÙ Ø¥Ø±Ø³Ø§Ù ØªÙØ¨ÙÙ ÙÙÙØ³ØªÙØ±ÙÙ ÙØ¥ØºÙØ§Ù Ø§ÙÙØªØ§Ø¨Ø¹Ø©.
+متابعة الأهداف:
+البوت يراقب TP1 و TP2 و TP3 على سعر السهم.
+إذا تحقق TP3 تستمر المتابعة للمستمرين ويتم إرسال تحديثات عند تسجيل قمم جديدة للعقد.
+إذا عاد العقد لمنطقة الحماية بعد TP3 يتم إرسال تنبيه للمستمرين وإغلاق المتابعة.
 
-Ø·Ø±ÙÙØ© Ø§ÙÙØ±Ø§Ø±:
-ÙØ·Ø§Ø¨Ù Ø¢Ø®Ø± ${HISTORY_LIMIT} Ø´Ø±ÙØ§Øª ÙÙ Ø§ÙÙØ§ÙØ§ ÙØ¹ Ø¢Ø®Ø± ${HISTORY_LIMIT} Ø´Ø±ÙØ§Øª ÙÙ Ø§ÙØ±Ø§Ø¯Ø§Ø±
-Ø«Ù ÙØ¨Ø­Ø« Ø¹Ù ÙÙØ³ Ø§ÙØ´Ø±ÙØ© ÙÙÙØ³ Ø§ÙØ§ØªØ¬Ø§Ù
+طريقة القرار:
+يطابق آخر ${HISTORY_LIMIT} شركات من القاما مع آخر ${HISTORY_LIMIT} شركات من الرادار
+ثم يبحث عن نفس الشركة ونفس الاتجاه
 
-ÙÙØ·Ù Ø§ÙØ±Ø§Ø¯Ø§Ø±:
-Ø£ÙÙÙÙØ© ÙØ®ÙØ§ØµØ© Ø§ÙÙØªØ§Ø¨Ø¹Ø©. Ø¥Ø°Ø§ Ø§ÙØ®ÙØ§ØµØ© ØªÙÙÙ Ø§ÙØªØ¸Ø± = ÙØ§ ØµÙÙØ©.
+منطق الرادار:
+أولوية لخلاصة المتابعة. إذا الخلاصة تقول انتظر = لا صفقة.
 
-ØªØ¹Ø¯ÙÙ Gamma Support:
-Ø¨ÙØª Ø§ÙÙØ±Ø§Ø± ÙØ¶ÙÙ ÙÙØ§Ø· Ø¥Ø¶Ø§ÙÙØ© Ø¥Ø°Ø§ ÙØ§Ù Ø¯Ø¹Ù Ø§ÙØ¬Ø§ÙØ§ Ø®ÙÙ Ø§ÙØµÙÙØ© Ø£ÙÙÙ ÙÙ Ø§ÙÙÙØ§ÙÙØ© Ø£ÙØ§ÙÙØ§.
+تعديل Gamma Support:
+بوت القرار يضيف نقاط إضافية إذا كان دعم الجاما خلف الصفقة أقوى من المقاومة أمامها.
 
-ØªØ¹Ø¯ÙÙ Ø§ÙØ¹ÙØ¯ Ø§ÙØ¨Ø¯ÙÙ:
-Ø¥Ø°Ø§ ØªØ¬Ø§ÙØ² Ø³Ø¹Ø± Ø§ÙØ¹ÙØ¯ Ø§ÙØ­Ø¯ ÙÙØª Ø§ÙØªÙØ¹ÙÙØ ÙØ¨Ø­Ø« Ø§ÙØ¨ÙØª Ø¹Ù Ø¹ÙØ¯ Ø¨Ø¯ÙÙ Ø¯Ø§Ø®Ù Ø§ÙÙØ·Ø§Ù.
-Ø¥Ø°Ø§ ØªØºÙØ± Ø§ÙØ³ØªØ±Ø§ÙÙ ÙØ¸ÙØ± ØªÙØ¨ÙÙ Ø¯Ø§Ø®Ù Ø±Ø³Ø§ÙØ© Ø§ÙØªÙØ¹ÙÙ.
+تعديل العقد البديل:
+إذا تجاوز سعر العقد الحد وقت التفعيل، يبحث البوت عن عقد بديل داخل النطاق.
+إذا تغير السترايك يظهر تنبيه داخل رسالة التفعيل.
 
-Ø·Ø±ÙÙØ© Ø§ÙÙÙÙ:
-ÙÙÙ Ø§ÙÙØ§ÙØ§Ø ÙØ¥Ø°Ø§ ØºÙØ± ÙÙØ¬ÙØ¯ ÙØªÙ Ø­Ø³Ø§Ø¨ ÙÙÙ ØªÙÙØ§Ø¦Ù 1.5%`,
+طريقة الوقف:
+وقف القاما، وإذا غير موجود يتم حساب وقف تلقائي 1.5%`,
         msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}
       );
     }
