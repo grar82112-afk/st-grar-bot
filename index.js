@@ -36,6 +36,33 @@ const decisionSupabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const WEBSITE_SUPABASE_URL =
+  process.env.WEBSITE_SUPABASE_URL;
+
+const WEBSITE_SUPABASE_SERVICE_ROLE_KEY =
+  process.env.WEBSITE_SUPABASE_SERVICE_ROLE_KEY;
+
+const websiteSupabase =
+  WEBSITE_SUPABASE_URL &&
+  WEBSITE_SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(
+        WEBSITE_SUPABASE_URL,
+        WEBSITE_SUPABASE_SERVICE_ROLE_KEY,
+        {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false
+          }
+        }
+      )
+    : null;
+
+if (!websiteSupabase) {
+  console.log(
+    'WEBSITE SUPABASE SYNC OFF: missing WEBSITE_SUPABASE_URL or WEBSITE_SUPABASE_SERVICE_ROLE_KEY'
+  );
+}
+
 const MATCH_WINDOW_MS = Number(process.env.MATCH_WINDOW_MS || 20 * 60 * 1000);
 const PRICE_CHECK_MS = Number(process.env.PRICE_CHECK_MS || 30 * 1000);
 const SETUP_EXPIRE_MS = Number(process.env.SETUP_EXPIRE_MS || 3 * 60 * 60 * 1000);
@@ -1526,6 +1553,437 @@ async function notifyAdminReject(symbol, reason) {
   ).catch(() => {});
 }
 
+async function saveWebsiteWatchingSetup(setup, gex, radar) {
+  if (!websiteSupabase) {
+    return null;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(
+      Date.now() + SETUP_EXPIRE_MS
+    ).toISOString();
+
+    await websiteSupabase
+      .from('stock_trade_setups')
+      .update({
+        status: 'expired',
+        contract_status: 'EXPIRED',
+        invalidated_at: nowIso,
+        invalidation_reason:
+          'انتهت مدة مراقبة الفرصة بدون تفعيل'
+      })
+      .eq('status', 'watching')
+      .lte('expires_at', nowIso);
+
+    const { data: rows, error: findError } =
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .select('*')
+        .eq('symbol', setup.symbol)
+        .eq('side', setup.side)
+        .in('status', [
+          'watching',
+          'active',
+          'WATCHING',
+          'ACTIVE'
+        ])
+        .order('created_at', {
+          ascending: false
+        });
+
+    if (findError) {
+      throw findError;
+    }
+
+    const existing = (rows || []).find((row) => {
+      const status = String(
+        row.status || ''
+      ).toUpperCase();
+
+      const contractStatus = String(
+        row.contract_status || ''
+      ).toUpperCase();
+
+      return (
+        ['WATCHING', 'ACTIVE'].includes(status) &&
+        !['STOPPED', 'EXPIRED', 'CLOSED'].includes(
+          contractStatus
+        ) &&
+        (
+          row.contract_ticker === setup.optionTicker ||
+          !row.contract_ticker
+        )
+      );
+    }) || (rows || []).find((row) => {
+      const status = String(
+        row.status || ''
+      ).toUpperCase();
+
+      return ['WATCHING', 'ACTIVE'].includes(status);
+    });
+
+    if (
+      existing &&
+      String(existing.status || '').toUpperCase() ===
+        'ACTIVE'
+    ) {
+      setup.websiteSetupId = existing.id;
+
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .update({
+          last_seen_at: nowIso
+        })
+        .eq('id', existing.id);
+
+      return existing;
+    }
+
+    const targets = [
+      setup.tp1,
+      setup.tp2,
+      setup.tp3
+    ]
+      .map((price, index) => ({
+        index: index + 1,
+        price: Number(price)
+      }))
+      .filter(
+        (target) =>
+          Number.isFinite(target.price) &&
+          target.price > 0
+      );
+
+    const payload = {
+      symbol: setup.symbol,
+      side: setup.side,
+
+      contract_ticker: setup.optionTicker,
+      contract_strike:
+        Number(setup.strike) || null,
+      contract_expiration:
+        setup.expiration || null,
+
+      entry_price:
+        Number(setup.entry) || null,
+      entry_score:
+        Math.round(
+          Number(setup.score || 0) * 10
+        ),
+      stop_price:
+        Number(setup.stop) || null,
+
+      gamma_targets: targets,
+
+      gamma_snapshot: {
+        source: 'ST_DECISION_BOT',
+        sourceArabic: 'بوت القرار',
+        engine: 'ST_DECISION_BOT',
+        stage: 'WATCHING',
+        stageArabic: 'مراقبة الدخول',
+        capturedAt: nowIso,
+
+        gexSide:
+          gex?.side || setup.side,
+        radarSide:
+          radar?.side || null,
+
+        decisionScore:
+          setup.score || null,
+        baseScore:
+          setup.baseScore || null,
+        gammaSupportBonus:
+          setup.gammaSupportBonus || 0,
+        gammaSupportRatio:
+          setup.gammaSupportRatio || 0,
+
+        activationRule:
+          setup.side === 'CALL'
+            ? `اختراق ${setup.entry} والثبات فوقه`
+            : `كسر ${setup.entry} والثبات تحته`,
+
+        selectedTargets: targets,
+
+        selectedContract: {
+          ticker: setup.optionTicker,
+          type: setup.side,
+          expiration: setup.expiration,
+          strike: setup.strike,
+          bid: setup.optionBid,
+          ask: setup.optionAsk,
+          midpoint: setup.optionEntry,
+          lastTradePrice: setup.optionLast,
+          volume: setup.optionVolume,
+          openInterest: setup.optionOi,
+          delta: setup.optionDelta,
+          gamma: setup.optionGamma
+        },
+
+        optionStop:
+          setup.optionStop || null
+      },
+
+      status: 'watching',
+      contract_status: 'WATCHING',
+
+      first_seen_at:
+        existing?.first_seen_at || nowIso,
+      last_seen_at: nowIso,
+      expires_at: expiresAt,
+
+      current_price:
+        Number(setup.currentPrice) || null,
+
+      contract_bid:
+        Number(setup.optionBid) || null,
+      contract_ask:
+        Number(setup.optionAsk) || null,
+      contract_quote_at: nowIso,
+
+      invalidated_at: null,
+      invalidation_reason: null
+    };
+
+    if (existing?.id) {
+      const { data, error } =
+        await websiteSupabase
+          .from('stock_trade_setups')
+          .update(payload)
+          .eq('id', existing.id)
+          .select('*')
+          .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setup.websiteSetupId = data.id;
+
+      console.log(
+        'WEBSITE WATCHING UPDATED:',
+        setup.symbol,
+        setup.side,
+        data.id
+      );
+
+      return data;
+    }
+
+    const { data, error } =
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .insert(payload)
+        .select('*')
+        .single();
+
+    if (error) {
+      throw error;
+    }
+
+    setup.websiteSetupId = data.id;
+
+    console.log(
+      'WEBSITE WATCHING SAVED:',
+      setup.symbol,
+      setup.side,
+      data.id
+    );
+
+    return data;
+  } catch (err) {
+    console.error(
+      'WEBSITE WATCHING SYNC ERROR:',
+      setup.symbol,
+      err?.message || err
+    );
+
+    return null;
+  }
+}
+
+async function activateWebsiteSetup(setup, stockPrice) {
+  if (!websiteSupabase) {
+    return null;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+
+    let row = null;
+
+    if (setup.websiteSetupId) {
+      const { data, error } =
+        await websiteSupabase
+          .from('stock_trade_setups')
+          .select('*')
+          .eq('id', setup.websiteSetupId)
+          .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      row = data;
+    }
+
+    if (!row) {
+      const { data, error } =
+        await websiteSupabase
+          .from('stock_trade_setups')
+          .select('*')
+          .eq('symbol', setup.symbol)
+          .eq('side', setup.side)
+          .in('status', [
+            'watching',
+            'active',
+            'WATCHING',
+            'ACTIVE'
+          ])
+          .order('created_at', {
+            ascending: false
+          })
+          .limit(1)
+          .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      row = data;
+    }
+
+    if (!row) {
+      console.error(
+        'WEBSITE ACTIVATION SYNC ERROR:',
+        setup.symbol,
+        'watching row not found'
+      );
+
+      return null;
+    }
+
+    const previousSnapshot =
+      row.gamma_snapshot &&
+      typeof row.gamma_snapshot === 'object'
+        ? row.gamma_snapshot
+        : {};
+
+    const optionEntry =
+      Number(setup.optionEntry) || 0;
+
+    const payload = {
+      status: 'active',
+      contract_status: 'ACTIVE',
+
+      activated_at: nowIso,
+      last_seen_at: nowIso,
+
+      current_price:
+        Number(stockPrice) || null,
+      best_price:
+        Number(stockPrice) || null,
+      best_price_at: nowIso,
+
+      contract_ticker:
+        setup.optionTicker,
+      contract_strike:
+        Number(setup.strike) || null,
+      contract_expiration:
+        setup.expiration || null,
+
+      contract_entry_price:
+        optionEntry || null,
+      contract_current_price:
+        optionEntry || null,
+      contract_best_price:
+        optionEntry || null,
+      contract_best_price_at:
+        nowIso,
+
+      contract_stop_price:
+        Number(setup.optionStop) || null,
+
+      contract_bid:
+        Number(setup.optionBid) || null,
+      contract_ask:
+        Number(setup.optionAsk) || null,
+
+      contract_profit_dollars: 0,
+      contract_profit_pct: 0,
+      contract_quote_at: nowIso,
+
+      gamma_snapshot: {
+        ...previousSnapshot,
+        stage: 'ACTIVE',
+        stageArabic: 'صفقة مفعلة',
+        activatedAt: nowIso,
+        activationStockPrice:
+          Number(stockPrice) || null,
+
+        selectedContract: {
+          ...(
+            previousSnapshot.selectedContract &&
+            typeof previousSnapshot.selectedContract ===
+              'object'
+              ? previousSnapshot.selectedContract
+              : {}
+          ),
+          ticker: setup.optionTicker,
+          type: setup.side,
+          expiration: setup.expiration,
+          strike: setup.strike,
+          bid: setup.optionBid,
+          ask: setup.optionAsk,
+          midpoint: optionEntry,
+          lastTradePrice: setup.optionLast,
+          volume: setup.optionVolume,
+          openInterest: setup.optionOi,
+          delta: setup.optionDelta,
+          gamma: setup.optionGamma
+        },
+
+        optionStop:
+          Number(setup.optionStop) || null
+      },
+
+      invalidated_at: null,
+      invalidation_reason: null
+    };
+
+    const { data, error } =
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .update(payload)
+        .eq('id', row.id)
+        .select('*')
+        .single();
+
+    if (error) {
+      throw error;
+    }
+
+    setup.websiteSetupId = data.id;
+
+    console.log(
+      'WEBSITE TRADE ACTIVATED:',
+      setup.symbol,
+      setup.side,
+      data.id
+    );
+
+    return data;
+  } catch (err) {
+    console.error(
+      'WEBSITE ACTIVATION SYNC ERROR:',
+      setup.symbol,
+      err?.message || err
+    );
+
+    return null;
+  }
+}
+
 async function scanGlobalMatches() {
   const pairs = findMatchingPairs();
 
@@ -1714,6 +2172,7 @@ async function createWatchSetup(symbol, gex, radar) {
 
   if (readyNow) {
     console.log('READY NOW SETUP:', setupKey);
+    await saveWebsiteWatchingSetup(setup, gex, radar);
     await sendActivatedMessage(setup, setup.currentPrice);
     return;
   }
@@ -1721,6 +2180,7 @@ async function createWatchSetup(symbol, gex, radar) {
   activeSetups.set(setupKey, setup);
 
   await sendWatchMessage(setup, gex, radar);
+  await saveWebsiteWatchingSetup(setup, gex, radar);
 
   console.log('NEW WATCH SETUP:', setupKey);
 }
@@ -1928,6 +2388,7 @@ ${oldOptionTicker || 'غير متوفر'}
   sentSetupKeys.add(setup.key);
 
   await saveActiveTradeToDb(setup);
+  await activateWebsiteSetup(setup, price);
   await saveTradeHistoryOpen(setup);
 
   const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
