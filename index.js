@@ -868,6 +868,113 @@ ${trade.optionTicker}
   });
 }
 
+async function closeWebsiteSetupFromDecisionStop(
+  trade,
+  optionPrice,
+  closeReason
+) {
+  if (!websiteSupabase) {
+    return null;
+  }
+
+  try {
+    let websiteSetupId =
+      trade.websiteSetupId || null;
+
+    if (!websiteSetupId) {
+      const { data, error } =
+        await websiteSupabase
+          .from('stock_trade_setups')
+          .select('id')
+          .eq('symbol', trade.symbol)
+          .eq('side', trade.side)
+          .eq(
+            'contract_ticker',
+            trade.optionTicker
+          )
+          .in('status', [
+            'active',
+            'ACTIVE'
+          ])
+          .neq(
+            'contract_status',
+            'STOPPED'
+          )
+          .order('created_at', {
+            ascending: false
+          })
+          .limit(1)
+          .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      websiteSetupId =
+        data?.id || null;
+    }
+
+    if (!websiteSetupId) {
+      console.error(
+        'WEBSITE FINAL STOP SETUP NOT FOUND:',
+        trade.symbol,
+        trade.side,
+        trade.optionTicker
+      );
+
+      return null;
+    }
+
+    const nowIso =
+      new Date().toISOString();
+
+    const { data, error } =
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .update({
+          contract_current_price:
+            Number(optionPrice) || null,
+          contract_stop_price:
+            Number(optionPrice) || null,
+          contract_status:
+            'STOPPED',
+          closed_at:
+            nowIso,
+          close_reason:
+            `ضرب الوقف بعد تأكيد بوت القرار — ${closeReason}`
+        })
+        .eq('id', websiteSetupId)
+        .select('*')
+        .single();
+
+    if (error) {
+      throw error;
+    }
+
+    trade.websiteSetupId =
+      websiteSetupId;
+
+    console.log(
+      'WEBSITE FINAL STOP SYNCED:',
+      trade.symbol,
+      trade.side,
+      websiteSetupId,
+      closeReason
+    );
+
+    return data;
+  } catch (err) {
+    console.error(
+      'WEBSITE FINAL STOP SYNC ERROR:',
+      trade.symbol,
+      trade.side,
+      err?.message || err
+    );
+
+    return null;
+  }
+}
+
 async function finalizeTradeStop(key, trade, optionPrice, closeReason = 'SL') {
   trade.slHit = true;
   trade.stopReviewInProgress = false;
@@ -894,8 +1001,22 @@ async function finalizeTradeStop(key, trade, optionPrice, closeReason = 'SL') {
     radar_review_result: trade.radarReviewResult || null
   });
 
-  await closeTradeHistory(trade, closeReason, optionPrice);
-  await sendBetterStopMessage(trade, optionPrice);
+  await closeWebsiteSetupFromDecisionStop(
+    trade,
+    optionPrice,
+    closeReason
+  );
+
+  await closeTradeHistory(
+    trade,
+    closeReason,
+    optionPrice
+  );
+
+  await sendBetterStopMessage(
+    trade,
+    optionPrice
+  );
 
   await sendUnifiedPrivateAlert({
     event: 'final_stop',
