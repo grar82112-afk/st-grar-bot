@@ -3023,22 +3023,73 @@ async function monitorSetups() {
 
 
 async function syncWebsiteStopPrice(trade) {
-  if (
-    !websiteSupabase ||
-    !trade.websiteSetupId
-  ) {
+  if (!websiteSupabase) {
     return;
   }
 
   try {
+    let websiteSetupId =
+      trade.websiteSetupId || null;
+
+    /*
+      بعض الصفقات القديمة حُفظت في البوت
+      قبل إضافة websiteSetupId.
+
+      عند عدم وجوده نبحث عن الصفقة نفسها
+      بواسطة الرمز والاتجاه ورمز العقد.
+    */
+    if (!websiteSetupId) {
+      const { data, error } =
+        await websiteSupabase
+          .from('stock_trade_setups')
+          .select('id, stop_price')
+          .eq('symbol', trade.symbol)
+          .eq('side', trade.side)
+          .eq(
+            'contract_ticker',
+            trade.optionTicker
+          )
+          .in(
+            'status',
+            ['ACTIVE', 'WATCHING']
+          )
+          .limit(1)
+          .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.id) {
+        console.error(
+          'WEBSITE STOP SETUP NOT FOUND:',
+          trade.symbol,
+          trade.side,
+          trade.optionTicker
+        );
+
+        return;
+      }
+
+      websiteSetupId = data.id;
+      trade.websiteSetupId =
+        websiteSetupId;
+
+      await saveActiveTradeToDb(trade);
+    }
+
     const { data, error } =
       await websiteSupabase
         .from('stock_trade_setups')
         .select('stop_price')
-        .eq('id', trade.websiteSetupId)
+        .eq('id', websiteSetupId)
         .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      throw error;
+    }
+
+    if (!data) {
       return;
     }
 
@@ -3050,25 +3101,27 @@ async function syncWebsiteStopPrice(trade) {
       websiteStop > 0 &&
       websiteStop !== Number(trade.stop)
     ) {
+      const previousStop =
+        trade.stop;
+
+      trade.stop =
+        websiteStop;
+
+      await saveActiveTradeToDb(trade);
+
       console.log(
         'WEBSITE STOP UPDATED:',
         trade.symbol,
-        trade.stop,
+        previousStop,
         '→',
         websiteStop
-      );
-
-      trade.stop = websiteStop;
-
-      await saveActiveTradeToDb(
-        trade
       );
     }
   } catch (err) {
     console.error(
-      'STOP SYNC ERROR:',
+      'WEBSITE STOP SYNC ERROR:',
       trade.symbol,
-      err?.message || err
+      err.message
     );
   }
 }
