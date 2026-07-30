@@ -3084,7 +3084,9 @@ async function syncWebsiteStopPrice(trade) {
       بواسطة الرمز والاتجاه ورمز العقد.
     */
     if (!websiteSetupId) {
-      const { data, error } =
+      let matchedSetup = null;
+
+      const exactResult =
         await websiteSupabase
           .from('stock_trade_setups')
           .select('id, stop_price')
@@ -3098,25 +3100,51 @@ async function syncWebsiteStopPrice(trade) {
             'status',
             ['ACTIVE', 'WATCHING']
           )
+          .order('created_at', {
+            ascending: false
+          })
           .limit(1)
           .maybeSingle();
 
-      if (error) {
-        throw error;
+      if (exactResult.error) {
+        throw exactResult.error;
       }
 
-      if (!data?.id) {
-        console.error(
-          'WEBSITE STOP SETUP NOT FOUND:',
-          trade.symbol,
-          trade.side,
-          trade.optionTicker
-        );
+      matchedSetup =
+        exactResult.data || null;
 
+      if (!matchedSetup?.id) {
+        const fallbackResult =
+          await websiteSupabase
+            .from('stock_trade_setups')
+            .select('id, stop_price')
+            .eq('symbol', trade.symbol)
+            .eq('side', trade.side)
+            .in(
+              'status',
+              ['ACTIVE', 'WATCHING']
+            )
+            .order('created_at', {
+              ascending: false
+            })
+            .limit(1)
+            .maybeSingle();
+
+        if (fallbackResult.error) {
+          throw fallbackResult.error;
+        }
+
+        matchedSetup =
+          fallbackResult.data || null;
+      }
+
+      if (!matchedSetup?.id) {
         return;
       }
 
-      websiteSetupId = data.id;
+      websiteSetupId =
+        matchedSetup.id;
+
       trade.websiteSetupId =
         websiteSetupId;
 
