@@ -1949,17 +1949,26 @@ async function activateWebsiteSetup(setup, stockPrice) {
     }
 
     if (!row) {
+      /*
+        لا نفعّل أي سجل قديم اعتمادًا على
+        السهم والاتجاه فقط.
+
+        يجب أن يطابق السجل نفس العقد الذي
+        اختاره بوت القرار.
+      */
       const { data, error } =
         await websiteSupabase
           .from('stock_trade_setups')
           .select('*')
           .eq('symbol', setup.symbol)
           .eq('side', setup.side)
+          .eq(
+            'contract_ticker',
+            setup.optionTicker
+          )
           .in('status', [
             'watching',
-            'active',
-            'WATCHING',
-            'ACTIVE'
+            'WATCHING'
           ])
           .order('created_at', {
             ascending: false
@@ -1993,12 +2002,42 @@ async function activateWebsiteSetup(setup, stockPrice) {
     const optionEntry =
       Number(setup.optionEntry) || 0;
 
+    /*
+      نكتب خطة بوت القرار النهائية عند
+      التفعيل ولا نعتمد على بيانات سجل
+      WATCHING قديم.
+    */
+    const targets = [
+      setup.tp1,
+      setup.tp2,
+      setup.tp3
+    ]
+      .map((price, index) => ({
+        index: index + 1,
+        price: Number(price)
+      }))
+      .filter(
+        (target) =>
+          Number.isFinite(target.price) &&
+          target.price > 0
+      );
+
     const payload = {
       status: 'active',
       contract_status: 'ACTIVE',
 
       activated_at: nowIso,
       last_seen_at: nowIso,
+
+      /*
+        بيانات خطة السهم النهائية من
+        نفس رسالة التفعيل.
+      */
+      entry_price:
+        Number(setup.entry) || null,
+      stop_price:
+        Number(setup.stop) || null,
+      gamma_targets: targets,
 
       current_price:
         Number(stockPrice) || null,
@@ -2041,6 +2080,12 @@ async function activateWebsiteSetup(setup, stockPrice) {
         activatedAt: nowIso,
         activationStockPrice:
           Number(stockPrice) || null,
+
+        activationEntry:
+          Number(setup.entry) || null,
+        activationStop:
+          Number(setup.stop) || null,
+        selectedTargets: targets,
 
         selectedContract: {
           ...(
