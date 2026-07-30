@@ -3203,6 +3203,14 @@ async function syncWebsiteStopPrice(trade) {
 async function monitorActiveTrades() {
   for (const [key, trade] of activeTrades.entries()) {
     try {
+      /*
+        الوقف اليدوي من الموقع يجب أن يتحدث
+        حتى لو لم يرجع Massive سعرًا للعقد.
+      */
+      await syncWebsiteStopPrice(
+        trade
+      );
+
       if (!trade.optionTicker) continue;
 
       const snap = await getMassiveOptionSnapshot(trade.symbol, trade.optionTicker);
@@ -3227,10 +3235,6 @@ async function monitorActiveTrades() {
       await updateTradeHigh(trade);
 
       const stockPrice = await getFinnhubPrice(trade.symbol);
-
-      await syncWebsiteStopPrice(
-        trade
-      );
 
       if (!trade.tp1Hit && hasTargetHit(trade, stockPrice, trade.tp1)) {
         trade.tp1Hit = true;
