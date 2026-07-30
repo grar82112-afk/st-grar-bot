@@ -3098,12 +3098,7 @@ async function syncWebsiteStopPrice(trade) {
           )
           .in(
             'status',
-            [
-              'active',
-              'watching',
-              'ACTIVE',
-              'WATCHING'
-            ]
+            ['ACTIVE', 'WATCHING']
           )
           .order('created_at', {
             ascending: false
@@ -3127,12 +3122,7 @@ async function syncWebsiteStopPrice(trade) {
             .eq('side', trade.side)
             .in(
               'status',
-              [
-              'active',
-              'watching',
-              'ACTIVE',
-              'WATCHING'
-            ]
+              ['ACTIVE', 'WATCHING']
             )
             .order('created_at', {
               ascending: false
