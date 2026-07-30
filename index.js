@@ -2555,6 +2555,13 @@ ${oldOptionTicker || 'غير متوفر'}
 
   await saveActiveTradeToDb(setup);
   await activateWebsiteSetup(setup, price);
+
+  /*
+    activateWebsiteSetup يضيف websiteSetupId،
+    لذلك نحفظ الصفقة مرة أخرى بعد التفعيل.
+  */
+  await saveActiveTradeToDb(setup);
+
   await saveTradeHistoryOpen(setup);
 
   const stopNote = setup.autoStop ? 'وقف تلقائي محسوب' : 'وقف من رسالة القاما';
@@ -2656,6 +2663,7 @@ async function saveActiveTradeToDb(trade) {
         strike: trade.strike,
         expiration: trade.expiration,
         option_ticker: trade.optionTicker,
+        website_setup_id: trade.websiteSetupId || null,
         option_entry: trade.optionEntry,
         option_high: trade.optionHigh,
         option_stop: trade.optionStop,
@@ -2734,6 +2742,7 @@ async function loadActiveTradesFromDb() {
         expiration: row.expiration,
 
         optionTicker: row.option_ticker,
+        websiteSetupId: row.website_setup_id || null,
         optionEntry: Number(row.option_entry),
         optionHigh: Number(row.option_high || row.option_entry),
         optionStop: Number(row.option_stop),
@@ -3072,89 +3081,25 @@ async function syncWebsiteStopPrice(trade) {
     return;
   }
 
+  /*
+    حماية صارمة:
+    لا تتم المزامنة بدون معرّف صفقة الموقع
+    المحفوظ داخل decision_active_trades.
+  */
+  const websiteSetupId =
+    trade.websiteSetupId || null;
+
+  if (!websiteSetupId) {
+    return;
+  }
+
   try {
-    let websiteSetupId =
-      trade.websiteSetupId || null;
-
-    /*
-      بعض الصفقات القديمة حُفظت في البوت
-      قبل إضافة websiteSetupId.
-
-      عند عدم وجوده نبحث عن الصفقة نفسها
-      بواسطة الرمز والاتجاه ورمز العقد.
-    */
-    if (!websiteSetupId) {
-      let matchedSetup = null;
-
-      const exactResult =
-        await websiteSupabase
-          .from('stock_trade_setups')
-          .select('id, stop_price')
-          .eq('symbol', trade.symbol)
-          .eq('side', trade.side)
-          .eq(
-            'contract_ticker',
-            trade.optionTicker
-          )
-          .in(
-            'status',
-            ['ACTIVE', 'WATCHING']
-          )
-          .order('created_at', {
-            ascending: false
-          })
-          .limit(1)
-          .maybeSingle();
-
-      if (exactResult.error) {
-        throw exactResult.error;
-      }
-
-      matchedSetup =
-        exactResult.data || null;
-
-      if (!matchedSetup?.id) {
-        const fallbackResult =
-          await websiteSupabase
-            .from('stock_trade_setups')
-            .select('id, stop_price')
-            .eq('symbol', trade.symbol)
-            .eq('side', trade.side)
-            .in(
-              'status',
-              ['ACTIVE', 'WATCHING']
-            )
-            .order('created_at', {
-              ascending: false
-            })
-            .limit(1)
-            .maybeSingle();
-
-        if (fallbackResult.error) {
-          throw fallbackResult.error;
-        }
-
-        matchedSetup =
-          fallbackResult.data || null;
-      }
-
-      if (!matchedSetup?.id) {
-        return;
-      }
-
-      websiteSetupId =
-        matchedSetup.id;
-
-      trade.websiteSetupId =
-        websiteSetupId;
-
-      await saveActiveTradeToDb(trade);
-    }
-
     const { data, error } =
       await websiteSupabase
         .from('stock_trade_setups')
-        .select('stop_price')
+        .select(
+          'id, symbol, side, contract_ticker, stop_price'
+        )
         .eq('id', websiteSetupId)
         .maybeSingle();
 
@@ -3166,39 +3111,59 @@ async function syncWebsiteStopPrice(trade) {
       return;
     }
 
+    const exactTrade =
+      String(data.symbol || '').toUpperCase() ===
+        String(trade.symbol || '').toUpperCase() &&
+      String(data.side || '').toUpperCase() ===
+        String(trade.side || '').toUpperCase() &&
+      String(data.contract_ticker || '').toUpperCase() ===
+        String(trade.optionTicker || '').toUpperCase();
+
+    if (!exactTrade) {
+      console.error(
+        'WEBSITE STOP ID MISMATCH:',
+        trade.symbol,
+        trade.side,
+        trade.optionTicker,
+        websiteSetupId
+      );
+      return;
+    }
+
     const websiteStop =
       Number(data.stop_price);
 
+    const currentStop =
+      Number(trade.stop);
+
     if (
-      Number.isFinite(websiteStop) &&
-      websiteStop > 0 &&
-      websiteStop !== Number(trade.stop)
+      !Number.isFinite(websiteStop) ||
+      websiteStop <= 0 ||
+      websiteStop === currentStop
     ) {
-      const previousStop =
-        trade.stop;
-
-      trade.stop =
-        websiteStop;
-
-      await saveActiveTradeToDb(trade);
-
-      console.log(
-        'WEBSITE STOP UPDATED:',
-        trade.symbol,
-        previousStop,
-        '→',
-        websiteStop
-      );
+      return;
     }
+
+    trade.stop = websiteStop;
+
+    await saveActiveTradeToDb(trade);
+
+    console.log(
+      'WEBSITE STOP UPDATED:',
+      trade.symbol,
+      currentStop,
+      '→',
+      websiteStop
+    );
   } catch (err) {
     console.error(
       'WEBSITE STOP SYNC ERROR:',
       trade.symbol,
-      err.message
+      trade.side,
+      err?.message || err
     );
   }
 }
-
 
 async function monitorActiveTrades() {
   for (const [key, trade] of activeTrades.entries()) {
