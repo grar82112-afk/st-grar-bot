@@ -3020,6 +3020,60 @@ async function monitorSetups() {
   }
 }
 
+
+
+async function syncWebsiteStopPrice(trade) {
+  if (
+    !websiteSupabase ||
+    !trade.websiteSetupId
+  ) {
+    return;
+  }
+
+  try {
+    const { data, error } =
+      await websiteSupabase
+        .from('stock_trade_setups')
+        .select('stop_price')
+        .eq('id', trade.websiteSetupId)
+        .maybeSingle();
+
+    if (error || !data) {
+      return;
+    }
+
+    const websiteStop =
+      Number(data.stop_price);
+
+    if (
+      Number.isFinite(websiteStop) &&
+      websiteStop > 0 &&
+      websiteStop !== Number(trade.stop)
+    ) {
+      console.log(
+        'WEBSITE STOP UPDATED:',
+        trade.symbol,
+        trade.stop,
+        '→',
+        websiteStop
+      );
+
+      trade.stop = websiteStop;
+
+      await saveActiveTradeToDb(
+        trade
+      );
+    }
+  } catch (err) {
+    console.error(
+      'STOP SYNC ERROR:',
+      trade.symbol,
+      err?.message || err
+    );
+  }
+}
+
+
 async function monitorActiveTrades() {
   for (const [key, trade] of activeTrades.entries()) {
     try {
@@ -3047,6 +3101,10 @@ async function monitorActiveTrades() {
       await updateTradeHigh(trade);
 
       const stockPrice = await getFinnhubPrice(trade.symbol);
+
+      await syncWebsiteStopPrice(
+        trade
+      );
 
       if (!trade.tp1Hit && hasTargetHit(trade, stockPrice, trade.tp1)) {
         trade.tp1Hit = true;
